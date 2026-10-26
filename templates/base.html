@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}WhatsApp Agent{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">⚽ WhatsApp Agent</div>
+    <nav>
+      <a class="{{ 'active' if active == 'dashboard' else '' }}" href="{{ url_for('index') }}">Übersicht</a>
+      <a class="{{ 'active' if active == 'polls' else '' }}" href="{{ url_for('polls_page') }}">Umfragen</a>
+      <a class="{{ 'active' if active == 'schedule' else '' }}" href="{{ url_for('schedule_page') }}">Zeitplan</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flashes">
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    Lokale Verwaltung · Änderungen werden direkt übernommen
+  </footer>
+</body>
+</html>

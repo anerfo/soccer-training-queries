@@ -11,8 +11,11 @@ example, a soccer group). It uses [neonize](https://github.com/krypton-byte/neon
 ## How it works
 
 - `wa.py serve` keeps the WhatsApp session connected, prints a QR code for
-  pairing, and listens on a local Unix socket (`data/wa.sock`).
-- `wa.py send ...` asks the daemon to send a message. This is what cron calls.
+  pairing, listens on a local Unix socket (`data/wa.sock`), and serves a web
+  interface at `http://127.0.0.1:8080`.
+- The built-in scheduler sends the next poll on the configured weekday/time.
+- `wa.py send ...` and `wa.py poll-next ...` can still be used from the CLI or
+  cron.
 - The session is stored in `data/wa_session.db`, so you only scan the QR once.
 
 ## Setup
@@ -24,6 +27,62 @@ python3 -m venv .venv
 
 FFmpeg is optional; it is only needed for media messages.
 
+## Docker
+
+Build and run the daemon:
+
+```bash
+mkdir -p data
+WA_UID=$(id -u) WA_GID=$(id -g) docker compose up -d --build
+docker compose logs -f wa
+```
+
+The QR code is written to `data/qr.png` on the host. Scan it with WhatsApp.
+The web UI is available at <http://127.0.0.1:8080>; it is mapped to localhost
+only. You can also use the same image for the CLI:
+
+```bash
+docker compose exec wa python wa.py groups
+docker compose exec wa python wa.py polls
+docker compose exec wa python wa.py poll-next --group "Soccer Mates"
+```
+
+`data/` on the host stores the session, socket, QR code, rotation state, and
+the schedule. `polls.txt` is bind-mounted read-write so the web editor can save
+it. `WA_UID`/`WA_GID` make the container user match your host user so it can
+write to `./data`; they default to `1000`.
+
+The image includes `libmagic` (required by neonize) but not FFmpeg. Text
+messages and polls work without FFmpeg; media messages would need it.
+
+Stop the daemon with `docker compose down`.
+
+## Web interface
+
+`wa.py serve` starts the web UI on `http://127.0.0.1:8080` by default. Use
+`--no-web` to disable it, or `--web-host`/`--web-port` to change the bind
+address. The UI has three pages:
+
+- **Übersicht** — connection status, next scheduled polls, and a "send now"
+  button.
+- **Umfragen** — edit `polls.txt` in the browser. The list is validated before
+  saving and a preview is shown below the editor.
+- **Zeitplan** — weekly day/time/timezone/group configuration plus a calendar.
+  Scheduled dates are green. Click a date to skip it (for example Christmas);
+  click again to re-enable it. Extra one-off dates can be added as
+  `JJJJ-MM-TT`, one per line.
+
+The scheduler runs inside the daemon and reads the schedule every 20 seconds.
+It sends at most once per due slot, with a 30-minute grace period. If the
+daemon was offline for longer than that, the missed poll is not sent late.
+Settings are stored in `data/schedule.json`; the last send is tracked in
+`data/schedule_state.json`.
+
+The web UI has no login and can send messages, so keep it bound to localhost.
+In Docker, the port is published as `127.0.0.1:8080:8080` for this reason.
+
+If you use the built-in scheduler, do not also run the cron `poll-next` job.
+
 ## First run (pair the account)
 
 ```bash
@@ -34,7 +93,8 @@ A QR code is printed in the terminal and saved to `data/qr.png`. On your phone
 open **WhatsApp > Linked devices > Link a device** and scan it. The image file
 is overwritten as the QR rotates.
 
-Once you see `Connected to WhatsApp`, leave the daemon running.
+Once you see `Connected to WhatsApp`, open `http://127.0.0.1:8080` to manage
+polls and the schedule, and leave the daemon running.
 
 To run it in the background:
 
@@ -127,8 +187,10 @@ results and voters inside the poll itself.
 
 ## Cron
 
-Cron only needs the `send` or `poll-next` command; the daemon must already be
-running.
+The web scheduler is the recommended way to send the weekly poll. Cron is
+still useful for reminders or if you prefer an external scheduler. It only
+needs the `send` or `poll-next` command; the daemon must already be running.
+Do not use both the web scheduler and the cron `poll-next` job.
 
 ```cron
 # Every Saturday at 10:00, remind the group about the match.
@@ -136,6 +198,12 @@ running.
 
 # Every Thursday at 18:00, send the next training poll.
 0 18 * * 4 cd /home/andi/code/whatsapp-agent && .venv/bin/python wa.py poll-next --group "Soccer Mates" >> data/send.log 2>&1
+```
+
+With Docker, use `exec -T` (no TTY) for the same command:
+
+```cron
+0 18 * * 4 cd /home/andi/code/whatsapp-agent && docker compose exec -T wa python wa.py poll-next --group "Soccer Mates" >> data/send.log 2>&1
 ```
 
 If the daemon is down or disconnected, the command exits non-zero and writes

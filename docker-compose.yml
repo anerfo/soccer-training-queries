@@ -1,0 +1,25 @@
+services:
+  wa:
+    build:
+      context: .
+      args:
+        UID: ${WA_UID:-1000}
+        GID: ${WA_GID:-1000}
+    image: whatsapp-agent:latest
+    init: true
+    restart: on-failure:3
+    stop_grace_period: 20s
+    command: ["python", "wa.py", "serve", "--web-host", "0.0.0.0"]
+    environment:
+      WA_GROUP: ${WA_GROUP:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./polls.txt:/app/polls.txt
+    healthcheck:
+      test: ["CMD", "python", "wa.py", "status", "--timeout", "3"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

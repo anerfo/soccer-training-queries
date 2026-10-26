@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Umfragen · WhatsApp Agent{% endblock %}
+{% block content %}
+<h1>Umfragen</h1>
+<p class="muted">
+  Eine Umfrage pro Zeile:
+  <code>Frage | Antwort 1 | Antwort 2</code>. Zeilen mit <code>#</code> sind Kommentare.
+</p>
+
+{% if error %}
+  <div class="flash error">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('save_polls') }}" class="editor">
+  <textarea name="polls" rows="24" spellcheck="false">{{ text }}</textarea>
+  <div class="form-actions">
+    <button type="submit">Speichern</button>
+    <span class="muted small">{{ polls|length }} gültige Umfragen erkannt</span>
+  </div>
+</form>
+
+{% if polls %}
+  <section class="panel">
+    <h2>Vorschau</h2>
+    <div class="table-wrap">
+      <table class="preview">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Frage</th>
+            <th>Antworten</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for poll in polls %}
+            <tr>
+              <td class="muted">{{ loop.index }}</td>
+              <td>{{ poll.question }}</td>
+              <td>
+                {% for option in poll.options %}
+                  <span class="option">{{ option }}</span>
+                {% endfor %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endif %}
+{% endblock %}
