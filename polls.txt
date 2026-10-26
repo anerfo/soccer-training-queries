@@ -1,22 +1,60 @@
-# Weekly training polls.
+# ⚽ Wöchentliche AH-Trainings-Umfragen (immer mittwochs).
 #
-# Format, one poll per line:
-#   Question | First answer | Second answer | Optional third answer
+# Format, eine Umfrage pro Zeile:
+#   Frage | Erste Antwort | Zweite Antwort
 #
-# - Blank lines and lines starting with # are ignored.
-# - Answers are separated by "|". Keep at least two answers.
-# - Polls are sent in order, then the list wraps around to the top.
-# - Edit this file anytime; no daemon restart is needed.
-#
-# Examples:
+# - Jede Umfrage hat genau zwei Antworten (eine Zusage, eine Absage).
+# - Leerzeilen und Zeilen, die mit # beginnen, werden ignoriert.
+# - Die Umfragen werden der Reihe nach gesendet, danach beginnt die Liste von vorn.
+# - Diese Datei kann jederzeit bearbeitet werden; ein Neustart des Daemons ist nicht nötig.
 
-Training this week - are you joining? | Yes | No | Maybe
-Who's in for this week's session? | I'm in | Can't make it
-Are you available for training? | Yes | No | Only later
-Count yourself in for training? | Count me in | Not this week
-Training attendance - are you coming? | Yes | No | Maybe
-Will you make it to the session? | Yes | No | I'll be late
-Who's showing up this week? | Me | Not me | Unsure
-Any chance you'll join training? | Definitely | Probably | No
-Weekly training check-in: are you in? | Yes | No | Maybe
-Ready for training? | Yes | No | Need a reminder
+⚽ AH-Training am Mittwoch – bist du dabei? | Ich bin am Start | Ich bin raus
+🏟️ Mittwoch, Flutlicht, AH-Training: Bist du am Start? | Klar am Start | Leider nicht
+„Der alte Mann kann's noch!“ – zeigst du's am Mittwoch? | Ich zeige es | Ich lasse es
+🏟️ „Und da ist er wieder, der AH-Kicker!“ – bist du Mittwoch dabei? | Da bin ich | Da bin ich nicht
+„Tooor!“ – schreist du Mittwoch mit? | ⚽ Ich schreie mit | 🤫 Ich schweige
+⚽ „Der Ball ist rund, das AH-Training wartet“ – kommst du am Mittwoch? | Ich komme | Ich komme nicht
+„Das Spiel ist aus, aber das AH-Training nicht“ – bist du Mittwoch dabei? | Auf dem Platz | Auf der Couch
+🥅 „Er trifft ihn, den Ball, den Mittwoch!“ – bist du dabei? | Ich treffe ein | Ich treffe nicht
+👟 „Was für ein Sprint, dieser AH-Kicker!“ – bist du's am Mittwoch? | Ich sprinte | Ich spare Kräfte
+„Der Wille zählt, nicht das Alter“ – Mittwoch dabei? | Wille da | Wille weg
+🍺⚽ „Nach dem Abpfiff ist vor dem Bier“ – Mittwoch beim AH-Training dabei? | Erst Training, dann Bier | Nur das Bier
+🎽 „Die AH-Elf zeigt's nochmal“ – bist du Mittwoch Teil davon? | Ich bin dabei | Ich bin raus
+„Tanzt er oder spielt er Fußball?“ – Mittwoch am Start? | Ich spiele | Ich tanze zu Hause
+🥅 „Alter schützt vor Toren nicht“ – schießt du Mittwoch eins? | Ich schieße | Ich schieße nicht
+„Ist das der Messi der AH?“ – bist du Mittwoch dabei? | Der Messi der AH | Der Messi der Couch
+⚽ Couch oder AH-Training am Mittwoch? | Training gewinnt | Couch gewinnt
+⚽🍕 AH-Training am Mittwoch oder Pizza? | Erst Training | Pizza gewinnt
+Müde oder motiviert fürs AH-Training am Mittwoch? | Motiviert | Müde
+🦴⚽ Sind die alten Knochen Mittwoch bereit? | Bereit fürs Training | Knochen streiken
+Fit oder verletzt – wie sieht's Mittwoch aus? | Fit | Verletzt
+🚑⚽ Bist du Mittwoch dabei oder im Krankenstand? | Dabei | Krankenstand
+🐢⚽ Kommst du Mittwoch im AH-Tempo? | Im AH-Tempo | Im Couch-Tempo
+Machst du Mittwoch Dampf auf dem AH-Platz? | Volle Kraft | Kein Dampf
+⚽🧊 Bist du Mittwoch heiß aufs AH-Training? | 🔥 Heiß wie nie | 🧊 Eisgekühlt
+Kämpfst du Mittwoch um die AH-Krone? | Ich kämpfe | Ich throne zu Hause
+🧱⚽ Steht die AH-Mauer Mittwoch? | Mauer steht | Mauer bröckelt
+Hast du Mittwoch zwei linke Füße – und kommst trotzdem? | Zwei linke Füße, aber dabei | Ich bleibe weg
+🎬⚽ Gibst du Mittwoch eine AH-Show? | Ganze Show | Nur Werbepause
+🎙️ „Und der Ball rollt wieder“ – bist du Mittwoch dabei? | Ich stehe am Anstoß | Ich bleibe auf der Bank
+„Ein Traum von einem Pass“ – zeigst du ihn Mittwoch? | Traum-Pass kommt | Traum bleibt aus
+🔥⚽ „Der brennt lichterloh“ – brennst du Mittwoch fürs AH-Training? | Volle Pulle | Lampe aus
+„Knapp daneben ist auch vorbei“ – versuchst du's Mittwoch trotzdem? | Ich versuche es | Ich lasse es
+🏟️ „Die Menge tobt“ – bist du Mittwoch Teil der AH-Menge? | Ich bin dabei | Ich fehle
+„Die Schuhe sind geschnürt“ – bist du Mittwoch bereit? | Schuhe geschnürt | Bleiben im Schrank
+🧤 „Er hält, was zu halten ist“ – packst du Mittwoch mit an? | Ich packe mit an | Ich gucke zu
+„Was für ein Antritt!“ – bist du Mittwoch am Start? | Am Start | Nicht am Start
+🐘⚽ „Ein Elefant im Porzellanladen“ – spielst du Mittwoch mit? | Ich spiele mit | Ich bleibe weg
+„Manege frei für die AH-Elf“ – bist du Mittwoch dabei? | Ich betrete die Manege | Ich bleibe im Zuschauerraum
+⚽🧯 „Feuer frei am Mittwoch“ – bist du dabei? | Feuer frei, ich komme | Ich bleibe weg
+„Bankdrücker oder Stammspieler?“ – was bist du Mittwoch? | Stammspieler | Bankdrücker
+🥨⚽ „Nach dem Training ist vor dem Bier“ – kommst du Mittwoch? | Ich komme auf ein Bier | Ich trinke zu Hause
+„Er fliegt über den Platz“ – fliegst du Mittwoch mit? | Ich fliege mit | Ich krieche zu Hause
+🐌⚽ „Schnecken sind auch Fußballer“ – kommst du Mittwoch? | Ich komme | Ich bleibe im Schneckenhaus
+„Jetzt geht's los!“ – bist du Mittwoch dabei? | Ich bin Feuer und Flamme | Ich bleibe kalt
+„Letzter Aufruf fürs AH-Training“ – bist du Mittwoch dabei? | ⚽ Ich bin am Start | 🟥 Ich bin raus
+🕖⚽ Mittwoch, 19 Uhr, AH-Training – schaffst du es? | Pünktlich am Start | Schaffe es nicht
+„Anpfiff um 19 Uhr“ – bist du Mittwoch beim AH-Training pünktlich am Platz? | Pünktlich da | Ich komme später
+🌧️⚽ Regen, Wind, AH-Training am Mittwoch – kommst du trotzdem? | Regen egal, ich komme | Ich bleibe zu Hause
+Sonne, Platz, AH-Training – bist du Mittwoch dabei? | Sonne im Gesicht, ich komme | Ich bleibe im Schatten
+⚽ AH-Training am Mittwoch – letzter Aufruf, bist du dabei? | Ich melde mich an | Ich melde mich ab

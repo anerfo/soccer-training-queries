@@ -36,7 +36,7 @@ MAX_MESSAGE_BYTES = 65_536
 MAX_POLL_QUESTION = 255
 MAX_POLL_OPTION = 100
 MAX_POLL_OPTIONS = 12
-DEFAULT_POLL_OPTIONS = ["Yes", "No", "Maybe"]
+DEFAULT_POLL_OPTIONS = ["Dabei", "Nicht dabei"]
 
 log = logging.getLogger("wa")
 
@@ -935,7 +935,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--group", help="group name or JID (or set WA_GROUP)"
     )
     poll_parser.add_argument(
-        "--question", default="Are you joining training this week?"
+        "--question", default="AH-Training am Mittwoch – bist du dabei?"
     )
     poll_parser.add_argument(
         "--option",
@@ -993,9 +993,7 @@ def build_parser() -> argparse.ArgumentParser:
     poll_next_parser.set_defaults(func=cmd_poll_next)
 
     polls_parser = subparsers.add_parser(
-        "polls",
-        parents=[],
-        help="preview the poll list and the next selection",
+        "polls", help="preview the poll list and the next selection"
     )
     polls_parser.add_argument(
         "--file",

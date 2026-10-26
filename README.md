@@ -86,31 +86,56 @@ export WA_SOCKET="/home/andi/code/whatsapp-agent/data/wa.sock"
 
 ## Recurring training questionnaire
 
-Send a native WhatsApp poll asking who is coming to training:
+The weekly polls live in `polls.txt`, one poll per line. Every poll is about
+the Wednesday AH training and has exactly two answers:
+
+```text
+# Frage | Antwort 1 | Antwort 2
+AH-Training am Mittwoch – bist du dabei? | Ich bin am Start | Ich bin raus
+🏟️ „Und da ist er wieder, der AH-Kicker!“ – bist du dabei? | Da bin ich | Da bin ich nicht
+```
+
+Edit the file whenever you want; the daemon does not need a restart. The bot
+walks through the list in order and wraps around, so consecutive weeks get a
+different message:
+
+```bash
+# Send the next poll from polls.txt
+.venv/bin/python wa.py poll-next --group "Soccer Mates"
+
+# Preview the list and see which one is next
+.venv/bin/python wa.py polls
+
+# Check the next choice without sending or advancing the rotation
+.venv/bin/python wa.py poll-next --group "Soccer Mates" --dry-run
+```
+
+The rotation is stored in `data/polls_state.json`. Delete that file to start
+again from the first line. Add `--random` to `poll-next` if you prefer a random
+poll that is never the same as the previous one.
+
+You can still send a one-off poll:
 
 ```bash
 .venv/bin/python wa.py poll --group "Soccer Mates" \
-  --question "Training this week - are you joining?" \
-  --option "Yes" --option "No" --option "Maybe"
+  --question "AH-Training am Mittwoch – bist du dabei?" \
+  --option "Ich bin am Start" --option "Ich bin raus"
 ```
-
-If you omit `--option`, the poll uses `Yes`, `No`, `Maybe`. Add `--multiple`
-to let people pick more than one answer.
 
 The daemon is send-only, so it does not read the votes. WhatsApp displays the
 results and voters inside the poll itself.
 
 ## Cron
 
-Cron only needs the `send` or `poll` command; the daemon must already be
+Cron only needs the `send` or `poll-next` command; the daemon must already be
 running.
 
 ```cron
 # Every Saturday at 10:00, remind the group about the match.
 0 10 * * 6 cd /home/andi/code/whatsapp-agent && .venv/bin/python wa.py send --group "Soccer Mates" --text "Match today at 7pm!" >> data/send.log 2>&1
 
-# Every Thursday at 18:00, ask who is joining training.
-0 18 * * 4 cd /home/andi/code/whatsapp-agent && .venv/bin/python wa.py poll --group "Soccer Mates" --question "Training this week - are you joining?" >> data/send.log 2>&1
+# Every Thursday at 18:00, send the next training poll.
+0 18 * * 4 cd /home/andi/code/whatsapp-agent && .venv/bin/python wa.py poll-next --group "Soccer Mates" >> data/send.log 2>&1
 ```
 
 If the daemon is down or disconnected, the command exits non-zero and writes

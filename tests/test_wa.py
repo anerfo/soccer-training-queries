@@ -1,8 +1,12 @@
+import argparse
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from wa import (
     choose_poll,
+    cmd_poll_next,
     match_group,
     normalize_poll,
     normalize_text,
@@ -135,6 +139,70 @@ class ChoosePollTests(unittest.TestCase):
     def test_random_with_single_poll(self):
         index, _poll = choose_poll(self.polls[:1], {"last_index": 0}, True)
         self.assertEqual(index, 0)
+
+
+class PollNextCommandTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        base = Path(self.temp_dir.name)
+        self.poll_file = base / "polls.txt"
+        self.poll_file.write_text(
+            "One? | Yes | No\nTwo? | Yes | No\n", encoding="utf-8"
+        )
+        self.state_file = base / "state.json"
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def _run(self, dry_run=False):
+        args = argparse.Namespace(
+            group="Group",
+            file=str(self.poll_file),
+            state=str(self.state_file),
+            random=False,
+            multiple=False,
+            dry_run=dry_run,
+            timeout=1.0,
+            socket="/tmp/unused.sock",
+        )
+        response = {
+            "ok": True,
+            "dry_run": dry_run,
+            "name": "Group",
+            "jid": "1@g.us",
+            "message_id": "id",
+        }
+        with mock.patch("wa._request", return_value=response):
+            return cmd_poll_next(args)
+
+    def test_advances_through_list_and_wraps(self):
+        self.assertEqual(self._run(), 0)
+        self.assertIn('"last_index": 0', self.state_file.read_text())
+        self.assertEqual(self._run(), 0)
+        self.assertIn('"last_index": 1', self.state_file.read_text())
+        self.assertEqual(self._run(), 0)
+        self.assertIn('"last_index": 0', self.state_file.read_text())
+
+    def test_dry_run_does_not_advance(self):
+        self.assertEqual(self._run(dry_run=True), 0)
+        self.assertFalse(self.state_file.exists())
+
+    def test_failed_send_does_not_advance(self):
+        with mock.patch(
+            "wa._request", return_value={"ok": False, "error": "nope"}
+        ):
+            args = argparse.Namespace(
+                group="Group",
+                file=str(self.poll_file),
+                state=str(self.state_file),
+                random=False,
+                multiple=False,
+                dry_run=False,
+                timeout=1.0,
+                socket="/tmp/unused.sock",
+            )
+            self.assertEqual(cmd_poll_next(args), 1)
+        self.assertFalse(self.state_file.exists())
 
 
 class NormalizeTextTests(unittest.TestCase):
