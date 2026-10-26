@@ -1,0 +1,22 @@
+# Weekly training polls.
+#
+# Format, one poll per line:
+#   Question | First answer | Second answer | Optional third answer
+#
+# - Blank lines and lines starting with # are ignored.
+# - Answers are separated by "|". Keep at least two answers.
+# - Polls are sent in order, then the list wraps around to the top.
+# - Edit this file anytime; no daemon restart is needed.
+#
+# Examples:
+
+Training this week - are you joining? | Yes | No | Maybe
+Who's in for this week's session? | I'm in | Can't make it
+Are you available for training? | Yes | No | Only later
+Count yourself in for training? | Count me in | Not this week
+Training attendance - are you coming? | Yes | No | Maybe
+Will you make it to the session? | Yes | No | I'll be late
+Who's showing up this week? | Me | Not me | Unsure
+Any chance you'll join training? | Definitely | Probably | No
+Weekly training check-in: are you in? | Yes | No | Maybe
+Ready for training? | Yes | No | Need a reminder
