@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Übersicht · WhatsApp Agent{% endblock %}
+{% block title %}Übersicht · FVF AH{% endblock %}
 {% block content %}
 <h1>Übersicht</h1>
 
@@ -36,6 +36,60 @@
 
 {% if schedule_error %}
   <div class="flash error">{{ schedule_error }}</div>
+{% endif %}
+
+{% if not status.connected %}
+<section class="panel qr-panel">
+  <h2>WhatsApp anmelden</h2>
+  <p class="muted">
+    Öffne WhatsApp, tippe auf <strong>Verknüpfte Geräte</strong> und scanne den QR-Code.
+  </p>
+  <div class="qr-wrap">
+    <img
+      id="qr-image"
+      class="qr"
+      src="{{ url_for('qr_code') }}"
+      alt="WhatsApp QR-Code"
+      {% if not status.qr_available %}hidden{% endif %}
+    >
+    <p id="qr-waiting" class="muted small" {% if status.qr_available %}hidden{% endif %}>
+      QR-Code wird erstellt …
+    </p>
+  </div>
+  <p class="muted small">Der QR-Code wird automatisch aktualisiert.</p>
+</section>
+
+<script>
+(function () {
+  var image = document.getElementById("qr-image");
+  var waiting = document.getElementById("qr-waiting");
+  if (!image || !waiting) return;
+
+  image.addEventListener("error", function () {
+    image.hidden = true;
+    waiting.hidden = false;
+  });
+
+  function refresh() {
+    fetch("{{ url_for('api_status') }}", { cache: "no-store" })
+      .then(function (response) { return response.json(); })
+      .then(function (data) {
+        if (data.connected) {
+          window.location.reload();
+          return;
+        }
+        if (data.qr_available) {
+          waiting.hidden = true;
+          image.hidden = false;
+          image.src = "{{ url_for('qr_code') }}?t=" + Date.now();
+        }
+      })
+      .catch(function () {});
+  }
+
+  setInterval(refresh, 5000);
+})();
+</script>
 {% endif %}
 
 <section class="panel">

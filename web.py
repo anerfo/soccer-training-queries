@@ -12,11 +12,13 @@ from zoneinfo import ZoneInfo
 
 from flask import (
     Flask,
+    abort,
     current_app,
     flash,
     redirect,
     render_template,
     request,
+    send_file,
     url_for,
 )
 
@@ -186,6 +188,19 @@ def create_app(service: Any, ctx: dict[str, Any]) -> Flask:
             ),
             weekdays=_ctx()["weekdays"],
         )
+
+    @app.get("/qr.png")
+    def qr_code() -> Any:
+        if service.connected.is_set():
+            abort(404)
+        qr_path = _ctx()["qr_path"]
+        if not qr_path.is_file():
+            abort(404)
+        response = send_file(qr_path, mimetype="image/png", max_age=0)
+        response.headers["Cache-Control"] = (
+            "no-store, no-cache, must-revalidate, max-age=0"
+        )
+        return response
 
     @app.get("/polls")
     def polls_page() -> str:

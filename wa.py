@@ -584,7 +584,9 @@ class WhatsAppService:
 
             qr = segno.make_qr(data)
             self.qr_path.parent.mkdir(parents=True, exist_ok=True)
-            qr.save(self.qr_path, scale=8, border=2)
+            tmp_path = self.qr_path.with_suffix(".tmp.png")
+            qr.save(tmp_path, scale=8, border=2)
+            os.replace(tmp_path, self.qr_path)
             if sys.stdout.isatty():
                 qr.terminal(compact=True)
         except Exception:
@@ -634,6 +636,7 @@ class WhatsAppService:
             "connected": self.connected.is_set(),
             "account": self._account(),
             "failure": self.failure,
+            "qr_available": self.qr_path.is_file(),
         }
 
     def groups(self) -> dict[str, Any]:
@@ -882,6 +885,7 @@ def serve(args: argparse.Namespace) -> int:
                 {
                     "polls_path": polls_path,
                     "poll_state_path": poll_state_path,
+                    "qr_path": Path(args.qr),
                     "schedule_path": schedule_path,
                     "schedule_state_path": schedule_state_path,
                     "parse_polls": parse_polls,

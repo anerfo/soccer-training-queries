@@ -199,6 +199,7 @@ class WebTests(unittest.TestCase):
         self.poll_state = base / "polls_state.json"
         self.schedule_path = base / "schedule.json"
         self.schedule_state = base / "schedule_state.json"
+        self.qr_path = base / "qr.png"
         self.service = FakeService()
         wa.save_schedule(
             self.schedule_path,
@@ -215,6 +216,7 @@ class WebTests(unittest.TestCase):
         ctx = {
             "polls_path": self.polls_path,
             "poll_state_path": self.poll_state,
+            "qr_path": self.qr_path,
             "schedule_path": self.schedule_path,
             "schedule_state_path": self.schedule_state,
             "parse_polls": wa.parse_polls,
@@ -239,6 +241,18 @@ class WebTests(unittest.TestCase):
         for path in ("/", "/polls", "/schedule", "/api/status"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, path)
+
+    def test_qr_code_is_only_served_while_disconnected(self):
+        self.qr_path.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+        response = self.client.get("/qr.png")
+        self.assertEqual(response.status_code, 404)
+
+        self.service.connected.clear()
+        response = self.client.get("/qr.png")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "image/png")
+        self.assertEqual(response.data, self.qr_path.read_bytes())
+        response.close()
 
     def test_save_polls(self):
         response = self.client.post(
