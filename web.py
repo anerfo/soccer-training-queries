@@ -7,11 +7,13 @@ import hashlib
 import logging
 import os
 import random
+import secrets
 import threading
 import time
 import uuid
 from datetime import date, datetime
 from typing import Any
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 from flask import (
@@ -20,11 +22,22 @@ from flask import (
     abort,
     current_app,
     flash,
+    g,
+    jsonify,
     redirect,
     render_template,
     request,
     send_file,
+    session,
     url_for,
+)
+from markupsafe import escape
+
+from auth import (
+    InvalidToken,
+    MissingToken,
+    build_auth_from_env,
+    new_pkce_pair,
 )
 
 MONTHS_DE = (
@@ -337,11 +350,275 @@ def _render_schedule(
     return html, status
 
 
-def create_app(service: Any, ctx: dict[str, Any]) -> Flask:
+_AUTH_UNSET = object()
+
+_UNAUTHORIZED_PAGE = (
+    "<!doctype html><html lang='de'><meta charset='utf-8'>"
+    "<meta name='color-scheme' content='dark'>"
+    "<title>401 · Nicht autorisiert</title>"
+    "<body style='margin:0;height:100vh;display:grid;place-items:center;"
+    "background:#05070c;color:#e8edf5;"
+    "font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif'>"
+    "<div style='max-width:32rem;padding:24px;text-align:center'>"
+    "<h1 style='margin:0 0 12px'>401 – Nicht autorisiert</h1>"
+    "<p style='color:#8b96a8'>{detail}</p>"
+    "<p style='color:#8b96a8'>Bitte einen gültigen Bearer-Token im "
+    "Authorization-Header senden.</p>"
+    "</div></body></html>"
+)
+
+
+def _unauthorized(message: str, as_json: bool) -> Response:
+    if as_json:
+        response: Response = jsonify(
+            ok=False, error="unauthorized", detail=message
+        )
+    else:
+        response = Response(
+            _UNAUTHORIZED_PAGE.format(detail=escape(message)),
+            status=401,
+            mimetype="text/html",
+        )
+    response.status_code = 401
+    response.headers["WWW-Authenticate"] = (
+        'Bearer realm="whatsapp-agent", error="invalid_token"'
+    )
+    return response
+
+
+def _login_error(message: str, status: int = 401) -> Response:
+    page = (
+        "<!doctype html><html lang='de'><meta charset='utf-8'>"
+        "<meta name='color-scheme' content='dark'>"
+        "<title>Login fehlgeschlagen</title>"
+        "<body style='margin:0;height:100vh;display:grid;place-items:center;"
+        "background:#05070c;color:#e8edf5;"
+        "font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif'>"
+        "<div style='max-width:36rem;padding:24px;text-align:center'>"
+        "<h1 style='margin:0 0 12px'>Login fehlgeschlagen</h1>"
+        f"<p style='color:#8b96a8'>{escape(message)}</p>"
+        f"<p><a style='color:#7fb0ff' href=\"{url_for('login')}\">"
+        "Erneut anmelden</a></p>"
+        "</div></body></html>"
+    )
+    return Response(page, status=status, mimetype="text/html")
+
+
+def _safe_next(value: str | None) -> str:
+    """Only allow redirects to local paths."""
+    if not value:
+        return ""
+    candidate = value.strip()
+    if not candidate.startswith("/") or candidate.startswith("//"):
+        return ""
+    parts = urlsplit(candidate)
+    if parts.scheme or parts.netloc:
+        return ""
+    return candidate
+
+
+def create_app(
+    service: Any,
+    ctx: dict[str, Any],
+    auth: Any = _AUTH_UNSET,
+) -> Flask:
     app = Flask(__name__)
-    app.secret_key = os.urandom(24)
+    app.secret_key = os.environ.get("SESSION_SECRET") or os.urandom(32)
     app.config["CTX"] = ctx
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=os.environ.get(
+            "SESSION_COOKIE_SECURE", ""
+        ).strip().lower()
+        in {"1", "true", "yes", "on"},
+    )
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
+
+    if auth is _AUTH_UNSET:
+        auth = build_auth_from_env()
+    app.config["AUTH"] = auth
+
+    @app.context_processor
+    def _inject_auth() -> dict[str, Any]:
+        return {
+            "auth_enabled": auth is not None,
+            "current_user": session.get("user"),
+        }
+
+    auth_exempt = {
+        "/health",
+        "/login",
+        "/auth/callback",
+        "/logout",
+    }
+
+    if auth is not None:
+
+        @app.before_request
+        def _require_auth() -> Any:
+            path = request.path
+            if path in auth_exempt or path.startswith("/static/"):
+                return None
+            is_api = path.startswith("/api/")
+            try:
+                if is_api:
+                    g.auth_claims = auth.check(request.headers)
+                else:
+                    g.auth_claims = auth.authorize(
+                        request.headers, session.get("user")
+                    )
+            except MissingToken as exc:
+                if is_api:
+                    return _unauthorized(str(exc), True)
+                return redirect(
+                    url_for(
+                        "login",
+                        next=request.full_path.rstrip("?"),
+                    )
+                )
+            except InvalidToken as exc:
+                log.warning("rejected token: %s", exc)
+                session.pop("user", None)
+                if is_api:
+                    return _unauthorized("invalid bearer token", True)
+                return redirect(
+                    url_for(
+                        "login",
+                        next=request.full_path.rstrip("?"),
+                    )
+                )
+            return None
+
+    @app.get("/health")
+    def health() -> dict[str, Any]:
+        return {"ok": True}
+
+    @app.get("/login")
+    def login() -> Any:
+        if auth is None:
+            return redirect(url_for("index"))
+        next_url = _safe_next(request.args.get("next"))
+        if session.get("user"):
+            return redirect(next_url or url_for("index"))
+        if not auth.can_login:
+            abort(
+                500,
+                "OIDC login is not configured; set OIDC_ISSUER, "
+                "OIDC_CLIENT_ID and OIDC_REDIRECT_URI",
+            )
+
+        redirect_uri = auth.config.redirect_uri or url_for(
+            "auth_callback", _external=True
+        )
+        verifier, challenge = new_pkce_pair()
+        state = secrets.token_urlsafe(32)
+        nonce = secrets.token_urlsafe(32)
+        session["_oidc_state"] = state
+        session["_oidc_nonce"] = nonce
+        session["_oidc_verifier"] = verifier
+        session["_oidc_redirect_uri"] = redirect_uri
+        session["_oidc_next"] = next_url
+        try:
+            target = auth.login.authorization_url(
+                state=state,
+                nonce=nonce,
+                code_challenge=challenge,
+                redirect_uri=redirect_uri,
+            )
+        except Exception as exc:
+            log.exception("could not build the OIDC login URL")
+            return _unauthorized(f"OIDC login failed: {exc}", False)
+        return redirect(target)
+
+    @app.get("/auth/callback")
+    def auth_callback() -> Any:
+        if auth is None:
+            return redirect(url_for("index"))
+
+        error = request.args.get("error")
+        if error:
+            return _login_error(
+                request.args.get("error_description", error)
+            )
+
+        expected_state = session.pop("_oidc_state", "")
+        state = request.args.get("state", "")
+        if not expected_state or state != expected_state:
+            return _login_error(
+                "Ungültiger Login-Status. Bitte erneut anmelden."
+            )
+
+        code = request.args.get("code", "")
+        verifier = session.pop("_oidc_verifier", "")
+        redirect_uri = session.pop("_oidc_redirect_uri", "")
+        nonce = session.pop("_oidc_nonce", "")
+        next_url = _safe_next(session.pop("_oidc_next", ""))
+        if not code or not verifier:
+            return _login_error(
+                "Login-Code fehlt. Bitte erneut anmelden."
+            )
+
+        try:
+            tokens = auth.login.exchange_code(
+                code=code,
+                code_verifier=verifier,
+                redirect_uri=redirect_uri,
+            )
+            id_token = tokens.get("id_token", "")
+            if not id_token:
+                raise InvalidToken("token response has no id_token")
+            claims = auth.login.validate_id_token(id_token, nonce)
+            info = auth.login.userinfo(tokens.get("access_token", ""))
+            for field in ("name", "preferred_username", "email", "groups"):
+                if not claims.get(field) and info.get(field):
+                    claims[field] = info[field]
+        except Exception as exc:
+            log.exception("OIDC login failed")
+            return _login_error(f"Login fehlgeschlagen: {exc}")
+
+        session["user"] = {
+            "sub": claims.get("sub", ""),
+            "name": (
+                claims.get("name")
+                or claims.get("preferred_username")
+                or claims.get("email")
+                or claims.get("sub", "")
+            ),
+            "email": claims.get("email", ""),
+            "groups": claims.get("groups", []),
+            "exp": claims.get("exp", int(time.time()) + 3600),
+        }
+        session["_oidc_id_token"] = id_token
+        return redirect(next_url or url_for("index"))
+
+    @app.get("/logout")
+    def logout() -> Any:
+        id_token = session.pop("_oidc_id_token", "")
+        session.pop("user", None)
+        for key in (
+            "_oidc_state",
+            "_oidc_nonce",
+            "_oidc_verifier",
+            "_oidc_redirect_uri",
+            "_oidc_next",
+        ):
+            session.pop(key, None)
+        if auth is not None:
+            target = auth.config.logout_url
+            if not target:
+                try:
+                    target = auth.login.logout_url(
+                        id_token=id_token,
+                        post_logout_redirect_uri=url_for(
+                            "login", _external=True
+                        ),
+                    )
+                except Exception:
+                    target = ""
+            if target:
+                return redirect(target)
+        return redirect(url_for("login"))
 
     @app.get("/")
     def index() -> str:

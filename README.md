@@ -110,8 +110,48 @@ daemon was offline for longer than that, the missed poll is not sent late.
 Settings are stored in `data/schedule.json`; the last send is tracked in
 `data/schedule_state.json`.
 
-The web UI has no login and can send messages, so keep it bound to localhost.
-In Docker, the port is published as `127.0.0.1:8080:8080` for this reason.
+### Authentication (OpenID Connect / Authelia)
+
+The app uses Authelia (or any OIDC provider) for login:
+
+- **Browser pages** use the OIDC authorization-code flow with PKCE. Visiting a
+  page while signed out redirects to `/login`, which sends you to Authelia. After
+  login you return to `/auth/callback`, the ID token is validated, and the user
+  is stored in a signed session cookie. The top bar shows the user and an
+  **Abmelden** link (`/logout`, with RP-initiated logout when Authelia offers an
+  `end_session_endpoint`).
+- **JSON API** calls (`/api/...`) are bearer-only and **never** use the session.
+  Send `Authorization: Bearer <jwt>`; otherwise they return `401` with
+  `WWW-Authenticate: Bearer`.
+- Protected pages without a session redirect to `/login`; `/health` and
+  `/static/` are exempt.
+
+Configure it with environment variables (Docker Compose forwards them):
+
+| Variable | Meaning |
+| --- | --- |
+| `OIDC_ISSUER` | Provider issuer URL, e.g. `https://auth.example.com` |
+| `OIDC_CLIENT_ID` | OIDC client id; used as audience if `OIDC_AUDIENCE` is unset |
+| `OIDC_CLIENT_SECRET` | Client secret (omit for a public PKCE-only client) |
+| `OIDC_REDIRECT_URI` | Exact redirect URI registered in Authelia; defaults to `<app>/auth/callback` |
+| `OIDC_AUDIENCE` | Expected `aud` claim for API bearer tokens (optional override) |
+| `OIDC_SCOPES` | Requested scopes (default `openid profile email`) |
+| `OIDC_TOKEN_AUTH_METHOD` | `client_secret_basic` (default) or `client_secret_post`; must match Authelia |
+| `OIDC_LOGOUT_URL` | Provider logout page when there is no `end_session_endpoint` (Authelia: `https://<authelia>/logout`) |
+| `OIDC_JWKS_URI` | JWKS URL; discovered from the issuer if unset |
+| `OIDC_ALGORITHMS` | Accepted signing algorithms (default `RS256,ES256,PS256`) |
+| `OIDC_LEEWAY` | Allowed clock skew in seconds (default `30`) |
+| `SESSION_SECRET` | Secret used to sign the session cookie (set this!) |
+| `SESSION_COOKIE_SECURE` | Set to `1` when serving over HTTPS |
+| `AUTH_DISABLED` | Set to `1` to turn authentication off explicitly |
+
+Register `<app-base-url>/auth/callback` as the redirect URI for the client in
+Authelia. Authentication is enforced once `OIDC_ISSUER` and `OIDC_CLIENT_ID` are
+set. Without them the daemon logs a warning and serves without auth (useful for
+local development); set `AUTH_DISABLED=1` to silence that on purpose.
+
+The web UI can send messages, so keep it bound to localhost unless you protect
+it. In Docker, the port is published as `127.0.0.1:8080:8080` for this reason.
 
 If you use the built-in scheduler, do not also run the cron `poll-next` job.
 

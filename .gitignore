@@ -3,3 +3,7 @@ data/*
 !data/.gitkeep
 __pycache__/
 *.py[cod]
+.env
+*.swp
+*.swo
+.*.swp

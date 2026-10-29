@@ -1,5 +1,6 @@
 import tempfile
 import threading
+import time
 import unittest
 from datetime import date, datetime
 from pathlib import Path
@@ -240,6 +241,7 @@ class WebTests(unittest.TestCase):
             "default_group": "AH Training",
             "weekdays": wa.WEEKDAYS_DE,
         }
+        self.ctx = ctx
         self.app = create_app(self.service, ctx)
         self.client = self.app.test_client()
 
@@ -341,6 +343,131 @@ class WebTests(unittest.TestCase):
         html = page.get_data(as_text=True)
         self.assertIn("Anna", html)
         self.assertIn("Bert", html)
+
+    def _gate(self):
+        from auth import AuthGate, OIDCConfig
+
+        class Validator:
+            def validate(self, _token, audience=None):
+                self.audience = audience
+                return {"sub": "token-user", "exp": time.time() + 3600}
+
+        config = OIDCConfig(
+            issuer="https://auth.example.com",
+            audience="whatsapp-agent",
+            client_id="whatsapp-agent",
+        )
+        return AuthGate(config, Validator())
+
+    def test_api_requires_bearer_token(self):
+        client = create_app(
+            self.service, self.ctx, self._gate()
+        ).test_client()
+
+        response = client.get("/api/status")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json()["error"], "unauthorized")
+        self.assertIn("Bearer", response.headers["WWW-Authenticate"])
+
+        page = client.get("/")
+        self.assertEqual(page.status_code, 302)
+        self.assertIn("/login", page.headers["Location"])
+
+    def test_api_accepts_valid_bearer_token(self):
+        client = create_app(
+            self.service, self.ctx, self._gate()
+        ).test_client()
+        response = client.get(
+            "/api/status",
+            headers={"Authorization": "Bearer good-token"},
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_api_ignores_session(self):
+        client = create_app(
+            self.service, self.ctx, self._gate()
+        ).test_client()
+        with client.session_transaction() as sess:
+            sess["user"] = {"sub": "session-user", "exp": time.time() + 3600}
+        # API is bearer-only, so a session alone must not authorize it.
+        self.assertEqual(client.get("/api/status").status_code, 401)
+        # Pages accept the session.
+        self.assertEqual(client.get("/").status_code, 200)
+
+    def test_invalid_token_returns_401(self):
+        from auth import AuthGate, InvalidToken, OIDCConfig
+
+        class Validator:
+            def validate(self, _token, audience=None):
+                raise InvalidToken("bad signature")
+
+        config = OIDCConfig(
+            issuer="https://auth.example.com",
+            audience="whatsapp-agent",
+            client_id="whatsapp-agent",
+        )
+        client = create_app(
+            self.service, self.ctx, AuthGate(config, Validator())
+        ).test_client()
+        response = client.get(
+            "/api/status",
+            headers={"Authorization": "Bearer bogus"},
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_static_and_health_are_exempt_from_auth(self):
+        client = create_app(
+            self.service, self.ctx, self._gate()
+        ).test_client()
+        self.assertEqual(
+            client.get("/static/style.css").status_code, 200
+        )
+        self.assertEqual(client.get("/health").status_code, 200)
+
+    def test_unauthenticated_page_redirects_to_login(self):
+        client = create_app(
+            self.service, self.ctx, self._gate()
+        ).test_client()
+        response = client.get("/votes")
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.headers["Location"].startswith("/login"))
+
+    def test_login_redirects_to_provider_with_state(self):
+        from auth import AuthGate, OIDCConfig
+
+        class FakeLogin:
+            def authorization_url(self, **kwargs):
+                return (
+                    "https://auth.example.com/authorize?state="
+                    + kwargs["state"]
+                )
+
+            def logout_url(self, **_kwargs):
+                return ""
+
+        config = OIDCConfig(
+            issuer="https://auth.example.com",
+            audience="whatsapp-agent",
+            client_id="whatsapp-agent",
+        )
+
+        class Validator:
+            def validate(self, _token, audience=None):
+                return {}
+
+        gate = AuthGate(config, Validator(), FakeLogin())
+        client = create_app(self.service, self.ctx, gate).test_client()
+
+        response = client.get("/login")
+        self.assertEqual(response.status_code, 302)
+        location = response.headers["Location"]
+        self.assertTrue(
+            location.startswith("https://auth.example.com/authorize?state=")
+        )
+        with client.session_transaction() as sess:
+            self.assertTrue(sess.get("_oidc_state"))
+            self.assertTrue(sess.get("_oidc_verifier"))
+            self.assertTrue(sess.get("_oidc_nonce"))
 
     def test_simulate_creates_poll_with_random_votes(self):
         response = self.client.post("/simulate")

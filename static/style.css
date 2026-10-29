@@ -67,6 +67,18 @@ a { color: var(--green); }
 .topbar nav a:hover { background: rgba(37,99,235,.22); }
 .topbar nav a.active { background: var(--green); color: #fff; }
 
+.topbar nav .who {
+  color: #7fb0ff;
+  font-size: .88rem;
+  font-weight: 600;
+  padding: 8px 4px;
+  align-self: center;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .container {
   width: min(1080px, calc(100% - 32px));
   margin: 24px auto 48px;
