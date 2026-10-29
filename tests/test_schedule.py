@@ -528,6 +528,12 @@ class WebTests(unittest.TestCase):
             self.assertTrue(sess.get("_oidc_verifier"))
             self.assertTrue(sess.get("_oidc_nonce"))
 
+    def test_mobile_nav_toggle_markup(self):
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="nav-toggle"', html)
+        self.assertIn('id="main-nav"', html)
+        self.assertIn('aria-controls="main-nav"', html)
+
     def test_group_check_endpoint(self):
         response = self.client.get(
             "/group-check", query_string={"group": "AH Training"}

@@ -14,7 +14,17 @@
       <img class="brand-logo" src="{{ url_for('static', filename='logo.png') }}" alt="FVF AH Logo">
       <span>FVF AH</span>
     </div>
-    <nav>
+    <button
+      type="button"
+      class="nav-toggle"
+      id="nav-toggle"
+      aria-label="Menü öffnen"
+      aria-controls="main-nav"
+      aria-expanded="false"
+    >
+      <span></span><span></span><span></span>
+    </button>
+    <nav id="main-nav">
       <a class="{{ 'active' if active == 'dashboard' else '' }}" href="{{ url_for('index') }}">Übersicht</a>
       <a class="{{ 'active' if active == 'polls' else '' }}" href="{{ url_for('polls_page') }}">Umfragen</a>
       <a class="{{ 'active' if active == 'votes' else '' }}" href="{{ url_for('votes_page') }}">Ergebnisse</a>
@@ -46,5 +56,38 @@
   <footer class="footer">
     Lokale Verwaltung · Änderungen werden direkt übernommen
   </footer>
+
+  <script>
+  (function () {
+    var toggle = document.getElementById("nav-toggle");
+    var nav = document.getElementById("main-nav");
+    if (!toggle || !nav) return;
+
+    function setOpen(open) {
+      nav.classList.toggle("open", open);
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      toggle.setAttribute("aria-label", open ? "Menü schließen" : "Menü öffnen");
+    }
+
+    toggle.addEventListener("click", function (event) {
+      event.stopPropagation();
+      setOpen(!nav.classList.contains("open"));
+    });
+
+    document.addEventListener("click", function (event) {
+      if (!nav.contains(event.target) && !toggle.contains(event.target)) {
+        setOpen(false);
+      }
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") setOpen(false);
+    });
+
+    nav.addEventListener("click", function (event) {
+      if (event.target.closest("a")) setOpen(false);
+    });
+  })();
+  </script>
 </body>
 </html>
