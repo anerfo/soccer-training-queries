@@ -9,6 +9,7 @@ second WhatsApp connection open.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -32,6 +33,9 @@ DEFAULT_POLLS_FILE = BASE_DIR / "polls.txt"
 DEFAULT_POLL_STATE = DEFAULT_DATA_DIR / "polls_state.json"
 DEFAULT_SCHEDULE_FILE = DEFAULT_DATA_DIR / "schedule.json"
 DEFAULT_SCHEDULE_STATE = DEFAULT_DATA_DIR / "schedule_state.json"
+DEFAULT_POLL_HISTORY = DEFAULT_DATA_DIR / "poll_history.json"
+DEFAULT_CONTACTS = DEFAULT_DATA_DIR / "contacts.json"
+POLL_HISTORY_LIMIT = 50
 
 WEEKDAYS_DE = (
     "Montag",
@@ -164,6 +168,135 @@ def load_poll_state(path: Path) -> dict[str, Any]:
 
 def save_poll_state(path: Path, state: dict[str, Any]) -> None:
     _save_json_object(path, state)
+
+
+def load_poll_history(path: Path) -> dict[str, Any]:
+    history = _load_json_object(path)
+    if not isinstance(history.get("polls"), list):
+        history["polls"] = []
+    return history
+
+
+def save_poll_history(path: Path, history: dict[str, Any]) -> None:
+    _save_json_object(path, history)
+
+
+def load_contacts(path: Path) -> dict[str, str]:
+    contacts = _load_json_object(path)
+    return {
+        str(key): value
+        for key, value in contacts.items()
+        if isinstance(value, str)
+    }
+
+
+def save_contacts(path: Path, contacts: dict[str, str]) -> None:
+    _save_json_object(path, contacts)
+
+
+def poll_option_hashes(options: list[str]) -> dict[str, str]:
+    """Map hex(SHA256(option name)) to the option name.
+
+    WhatsApp encodes a poll vote as the SHA-256 hashes of the selected option
+    names, so this lets us translate a decrypted vote back to the answers.
+    """
+    return {
+        hashlib.sha256(option.encode("utf-8")).hexdigest(): option
+        for option in options
+    }
+
+
+class PollHistoryStore:
+    """Records sent polls and the votes received for them."""
+
+    def __init__(self, path: Path, limit: int = POLL_HISTORY_LIMIT) -> None:
+        self.path = path
+        self.limit = limit
+        self._lock = threading.Lock()
+
+    def record_sent_poll(
+        self,
+        *,
+        message_id: str,
+        chat: str,
+        group_name: str,
+        question: str,
+        options: list[str],
+        timestamp: Any,
+        simulated: bool = False,
+    ) -> None:
+        if not message_id:
+            return
+        with self._lock:
+            history = load_poll_history(self.path)
+            polls = [
+                poll
+                for poll in history["polls"]
+                if poll.get("message_id") != message_id
+            ]
+            entry = {
+                "message_id": message_id,
+                "chat": chat,
+                "group_name": group_name,
+                "question": question,
+                "options": options,
+                "sent_at": timestamp,
+                "votes": {},
+            }
+            if simulated:
+                entry["simulated"] = True
+            polls.insert(0, entry)
+            history["polls"] = polls[: self.limit]
+            save_poll_history(self.path, history)
+
+    def clear_simulated(self) -> int:
+        with self._lock:
+            history = load_poll_history(self.path)
+            before = len(history["polls"])
+            history["polls"] = [
+                poll
+                for poll in history["polls"]
+                if not poll.get("simulated")
+            ]
+            removed = before - len(history["polls"])
+            if removed:
+                save_poll_history(self.path, history)
+            return removed
+
+    def record_vote(
+        self,
+        *,
+        poll_id: str,
+        chat: str,
+        sender: str,
+        sender_alt: str,
+        pushname: str,
+        selected_hashes: list[str],
+        timestamp: Any,
+    ) -> bool:
+        if not poll_id:
+            return False
+        with self._lock:
+            history = load_poll_history(self.path)
+            for poll in history["polls"]:
+                if poll.get("message_id") != poll_id:
+                    continue
+                option_map = poll_option_hashes(poll.get("options", []))
+                selected = [
+                    option_map.get(option_hash, option_hash)
+                    for option_hash in selected_hashes
+                ]
+                key = sender or sender_alt or pushname or ""
+                poll.setdefault("votes", {})[key] = {
+                    "sender": sender,
+                    "sender_alt": sender_alt,
+                    "pushname": pushname,
+                    "selected": selected,
+                    "timestamp": timestamp,
+                }
+                save_poll_history(self.path, history)
+                return True
+            return False
 
 
 def load_schedule_state(path: Path) -> dict[str, Any]:
@@ -496,9 +629,17 @@ def _raise_ambiguous(query: str, matches: list[dict[str, str]]) -> None:
 
 
 class WhatsAppService:
-    def __init__(self, db_path: Path, qr_path: Path) -> None:
+    def __init__(
+        self,
+        db_path: Path,
+        qr_path: Path,
+        history_path: Path | None = None,
+    ) -> None:
         self.db_path = db_path
         self.qr_path = qr_path
+        self.history = PollHistoryStore(
+            history_path or (db_path.parent / DEFAULT_POLL_HISTORY.name)
+        )
         self.client: Any = None
         self.connected = threading.Event()
         self.stop_requested = threading.Event()
@@ -513,6 +654,7 @@ class WhatsAppService:
             ConnectedEv,
             DisconnectedEv,
             LoggedOutEv,
+            MessageEv,
             TemporaryBanEv,
         )
 
@@ -551,11 +693,18 @@ class WhatsAppService:
             log.warning("%s", self.failure)
 
         @self.client.event(TemporaryBanEv)
-        def _on_temporary_ban(_client: Any, event: Any) -> None:
+        def _on_temporary_ban(_client: Any, _event: Any) -> None:
             self.connected.clear()
             self._fail(
                 f"temporary ban (reason={event.Code}, expires={event.Expire})"
             )
+
+        @self.client.event(MessageEv)
+        def _on_message(_client: Any, event: Any) -> None:
+            try:
+                self._handle_message(event)
+            except Exception:
+                log.exception("could not process incoming message")
 
         self._connect_thread = threading.Thread(
             target=self._connect_loop, name="wa-connect", daemon=True
@@ -604,6 +753,52 @@ class WhatsAppService:
             return None
         return Jid2String(self.client.me.JID)
 
+    def _handle_message(self, event: Any) -> None:
+        """Record incoming poll votes."""
+        from neonize.utils.jid import Jid2String
+        from neonize.utils.message import get_poll_update_message
+
+        update = get_poll_update_message(event)
+        if update is None:
+            return
+
+        poll_id = update.pollCreationMessageKey.ID
+        source = event.Info.MessageSource
+        chat = Jid2String(source.Chat) if source.HasField("Chat") else ""
+        sender = Jid2String(source.Sender) if source.HasField("Sender") else ""
+        sender_alt = (
+            Jid2String(source.SenderAlt) if source.HasField("SenderAlt") else ""
+        )
+
+        try:
+            vote = self.client.decrypt_poll_vote(event)
+            selected_hashes = [bytes(item).hex() for item in vote.selectedOptions]
+        except Exception:
+            log.warning(
+                "could not decrypt poll vote for %s; the original message "
+                "secret may not be stored",
+                poll_id,
+                exc_info=True,
+            )
+            return
+
+        recorded = self.history.record_vote(
+            poll_id=poll_id,
+            chat=chat,
+            sender=sender,
+            sender_alt=sender_alt,
+            pushname=event.Info.Pushname,
+            selected_hashes=selected_hashes,
+            timestamp=event.Info.Timestamp,
+        )
+        log.info(
+            "Recorded poll vote for %s from %s (%d option(s))%s",
+            poll_id,
+            sender or sender_alt or "(unknown)",
+            len(selected_hashes),
+            "" if recorded else " [poll not in history]",
+        )
+
     def _wait_connected(self) -> None:
         if self.client is None:
             raise RuntimeError("daemon is not initialized")
@@ -643,6 +838,90 @@ class WhatsAppService:
         self._wait_connected()
         with self._lock:
             return {"groups": self._joined_groups()}
+
+    @staticmethod
+    def _participant_number(participant: Any) -> str:
+        from neonize.utils.jid import Jid2String
+
+        for field in ("PhoneNumber", "JID"):
+            if not participant.HasField(field):
+                continue
+            jid = getattr(participant, field)
+            if not jid.User:
+                continue
+            string = Jid2String(jid)
+            server = string.split("@", 1)[1] if "@" in string else ""
+            if server == "s.whatsapp.net":
+                return string.split("@", 1)[0].split(":", 1)[0]
+        return ""
+
+    def _contact_maps(self) -> tuple[dict[str, str], dict[str, str]]:
+        """Return (address-book names, WhatsApp pushnames) keyed by number."""
+        from neonize.utils.jid import Jid2String
+
+        names: dict[str, str] = {}
+        pushnames: dict[str, str] = {}
+        try:
+            contacts = self.client.contact.get_all_contacts()
+        except Exception:
+            log.warning("could not read the WhatsApp contact store", exc_info=True)
+            return names, pushnames
+        for contact in contacts:
+            try:
+                jid = Jid2String(contact.JID)
+            except Exception:
+                continue
+            number = jid.split("@", 1)[0].split(":", 1)[0]
+            info = contact.Info
+            pushname = (info.PushName or "").strip()
+            name = (
+                info.FullName
+                or info.FirstName
+                or info.BusinessName
+                or pushname
+                or ""
+            ).strip()
+            if number and name:
+                names[number] = name
+            if number and pushname:
+                pushnames[number] = pushname
+        return names, pushnames
+
+    def group_directory(self, group: str) -> dict[str, dict[str, str]]:
+        """Return {phone number: {"name": ..., "whatsapp": ...}} for a group.
+
+        ``name`` prefers the phone's address book and falls back to the
+        WhatsApp display name. ``whatsapp`` is the name WhatsApp shows for the
+        participant (display/push name).
+        """
+        from neonize.utils.jid import build_jid
+
+        self._wait_connected()
+        with self._lock:
+            resolved = self._resolve_group(group)
+            user, _, server = resolved["jid"].partition("@")
+            group_jid = build_jid(user, server or "g.us")
+            info = self.client.get_group_info(group_jid)
+            names, pushnames = self._contact_maps()
+            result: dict[str, dict[str, str]] = {}
+            for participant in info.Participants:
+                number = self._participant_number(participant)
+                if not number:
+                    continue
+                display = (participant.DisplayName or "").strip()
+                whatsapp = display or pushnames.get(number, "")
+                result[number] = {
+                    "name": names.get(number) or whatsapp,
+                    "whatsapp": whatsapp,
+                }
+            return result
+
+    def group_contacts(self, group: str) -> dict[str, str]:
+        """Return {phone number: name} for the members of a group."""
+        return {
+            number: entry["name"]
+            for number, entry in self.group_directory(group).items()
+        }
 
     def _resolve_group(self, group: str) -> dict[str, str]:
         query = group.strip()
@@ -712,6 +991,14 @@ class WhatsAppService:
                 resolved["name"],
                 resolved["jid"],
                 response.ID,
+            )
+            self.history.record_sent_poll(
+                message_id=response.ID,
+                chat=resolved["jid"],
+                group_name=resolved["name"],
+                question=question,
+                options=options,
+                timestamp=response.Timestamp,
             )
             return {
                 "dry_run": False,
@@ -858,13 +1145,17 @@ def serve(args: argparse.Namespace) -> int:
             return 1
         socket_path.unlink()
 
-    service = WhatsAppService(Path(args.db), Path(args.qr))
-    service.start()
-
     polls_path = Path(args.polls)
     poll_state_path = Path(args.poll_state)
     schedule_path = Path(args.schedule)
     schedule_state_path = Path(args.schedule_state)
+    poll_history_path = Path(args.poll_history)
+    contacts_path = Path(args.contacts)
+
+    service = WhatsAppService(
+        Path(args.db), Path(args.qr), poll_history_path
+    )
+    service.start()
 
     scheduler = PollScheduler(
         service,
@@ -895,8 +1186,17 @@ def serve(args: argparse.Namespace) -> int:
                     "schedule_slots": schedule_slots,
                     "next_schedule_slots": next_schedule_slots,
                     "send_next_poll": send_next_poll,
+                    "choose_poll": choose_poll,
                     "load_poll_state": load_poll_state,
                     "load_schedule_state": load_schedule_state,
+                    "poll_history_path": poll_history_path,
+                    "load_poll_history": load_poll_history,
+                    "contacts_path": contacts_path,
+                    "load_contacts": load_contacts,
+                    "save_contacts": save_contacts,
+                    "group_contacts": service.group_contacts,
+                    "group_directory": service.group_directory,
+                    "poll_history_store": service.history,
                     "default_group": os.environ.get("WA_GROUP", ""),
                     "weekdays": WEEKDAYS_DE,
                 },
@@ -1285,6 +1585,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--schedule-state",
         default=str(DEFAULT_SCHEDULE_STATE),
         help=f"schedule state (default: {DEFAULT_SCHEDULE_STATE})",
+    )
+    serve_parser.add_argument(
+        "--poll-history",
+        default=str(DEFAULT_POLL_HISTORY),
+        help=f"sent polls and votes (default: {DEFAULT_POLL_HISTORY})",
+    )
+    serve_parser.add_argument(
+        "--contacts",
+        default=str(DEFAULT_CONTACTS),
+        help=f"number to name mapping (default: {DEFAULT_CONTACTS})",
     )
     serve_parser.add_argument(
         "--web-host",

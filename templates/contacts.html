@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Namen · FVF AH{% endblock %}
+{% block content %}
+<h1>Nummern → Namen</h1>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Telefonbuch</h2>
+    <a class="button secondary" href="{{ url_for('contacts_page') }}">Aus Gruppe aktualisieren</a>
+  </div>
+  <p class="muted">
+    Nummern und Namen werden automatisch aus der konfigurierten Gruppe und dem
+    WhatsApp-Telefonbuch übernommen. Trage fehlende Namen einfach in die Felder
+    ein und speichere.
+  </p>
+
+  {% if group %}
+    <p class="muted small">
+      Gruppe: <strong>{{ group }}</strong> ·
+      {% if group_connected %}
+        {% if auto_named or added %}
+          {{ auto_named }} Name(n) übernommen, {{ added }} Nummer(n) ergänzt.
+        {% else %}
+          Keine neuen Namen gefunden.
+        {% endif %}
+      {% else %}
+        Nicht mit WhatsApp verbunden – automatisches Übernehmen ist erst nach dem
+        Verbinden möglich.
+      {% endif %}
+    </p>
+  {% else %}
+    <p class="muted small">
+      Keine Gruppe im <a href="{{ url_for('schedule_page') }}">Zeitplan</a>
+      eingestellt – es werden nur Nummern aus bisherigen Abstimmungen angezeigt.
+    </p>
+  {% endif %}
+
+  {% if group_error %}
+    <div class="flash error">{{ group_error }}</div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('save_contacts_page') }}">
+    <div class="contact-toolbar">
+      <input
+        type="search"
+        id="contact-filter"
+        placeholder="Nach Name oder Nummer filtern …"
+        autocomplete="off"
+      >
+      <span class="muted small">
+        {{ mapped_count }} von {{ number_count }} Nummern zugeordnet
+      </span>
+    </div>
+
+    <div class="table-wrap">
+      <table class="preview contact-table">
+        <thead>
+          <tr>
+            <th>Nummer</th>
+            <th>Name</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in contact_rows %}
+            <tr data-search="{{ (row.number ~ ' ' ~ row.name)|lower }}">
+              <td class="muted contact-number">
+                <span class="contact-phone">{{ row.number }}</span>
+                {% if row.whatsapp %}
+                  <small class="contact-whatsapp">{{ row.whatsapp }}</small>
+                {% endif %}
+                <input type="hidden" name="number" value="{{ row.number }}">
+              </td>
+              <td>
+                <input
+                  type="text"
+                  name="name"
+                  value="{{ row.name }}"
+                  placeholder="Name eintragen"
+                  autocomplete="off"
+                >
+              </td>
+            </tr>
+          {% endfor %}
+          <tr class="contact-add" data-search="">
+            <td>
+              <input
+                type="text"
+                name="number"
+                placeholder="Neue Nummer"
+                inputmode="tel"
+                autocomplete="off"
+              >
+            </td>
+            <td>
+              <input
+                type="text"
+                name="name"
+                placeholder="Neuer Name"
+                autocomplete="off"
+              >
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    {% if not contact_rows %}
+      <p class="muted small">
+        Noch keine Nummern bekannt. Sobald der Bot verbunden ist, erscheinen die
+        Gruppenmitglieder hier automatisch.
+      </p>
+    {% endif %}
+
+    <div class="form-actions">
+      <button type="submit">Zuordnung speichern</button>
+      <span class="muted small">Gespeichert in <code>data/contacts.json</code></span>
+    </div>
+  </form>
+
+  <p class="muted small">
+    Die Namen erscheinen anschließend auf der
+    <a href="{{ url_for('votes_page') }}">Ergebnisse</a>-Seite und im Excel-Export.
+  </p>
+</section>
+
+<script>
+(function () {
+  var filter = document.getElementById("contact-filter");
+  if (!filter) return;
+  var rows = Array.prototype.slice.call(
+    document.querySelectorAll("tr[data-search]")
+  );
+  filter.addEventListener("input", function () {
+    var needle = filter.value.trim().toLowerCase();
+    rows.forEach(function (row) {
+      var match = !needle || row.dataset.search.indexOf(needle) !== -1;
+      row.hidden = !match;
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>{% block title %}FVF AH{% endblock %}</title>
+  <style>html, body { background: #05070c; }</style>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -15,6 +17,8 @@
     <nav>
       <a class="{{ 'active' if active == 'dashboard' else '' }}" href="{{ url_for('index') }}">Übersicht</a>
       <a class="{{ 'active' if active == 'polls' else '' }}" href="{{ url_for('polls_page') }}">Umfragen</a>
+      <a class="{{ 'active' if active == 'votes' else '' }}" href="{{ url_for('votes_page') }}">Ergebnisse</a>
+      <a class="{{ 'active' if active == 'contacts' else '' }}" href="{{ url_for('contacts_page') }}">Namen</a>
       <a class="{{ 'active' if active == 'schedule' else '' }}" href="{{ url_for('schedule_page') }}">Zeitplan</a>
     </nav>
   </header>

@@ -63,14 +63,46 @@ Stop the daemon with `docker compose down`.
 `--no-web` to disable it, or `--web-host`/`--web-port` to change the bind
 address. The UI has three pages:
 
-- **Übersicht** — connection status, next scheduled polls, and a "send now"
-  button.
+- **Übersicht** — connection status, next scheduled polls, a preview of the
+  next poll and a "send now" button.
 - **Umfragen** — edit `polls.txt` in the browser. The list is validated before
   saving and a preview is shown below the editor.
+- **Ergebnisse** — browse the most recently sent polls, see who accepted and
+  declined, and export a table for Excel. See below.
+- **Namen** — map phone numbers to names in an editable table. Numbers and
+  names are filled automatically from the configured group and the WhatsApp
+  contact store (the phone's address book); missing names can be typed in.
+  The WhatsApp display name (push name) is shown under each number as a hint.
+  The mapping lives in `data/contacts.json`.
 - **Zeitplan** — weekly day/time/timezone/group configuration plus a calendar.
   Scheduled dates are green. Click a date to skip it (for example Christmas);
   click again to re-enable it. Extra one-off dates can be added as
   `JJJJ-MM-TT`, one per line.
+
+### Poll results
+
+The daemon records every poll it sends together with the votes it receives
+(`data/poll_history.json`, last 50 polls). The **Ergebnisse** page lets you:
+
+- step through the most recent polls (newer/older),
+- see per-option totals and who voted for what,
+- click an answer to filter the table and the Excel export,
+- open **Namen** to map phone numbers to names; the list is prefilled from the
+  configured group and the WhatsApp contact store, editable per row,
+- copy or download just the names (one per line, no header) for the current
+  filter directly into Excel.
+
+Votes are read from WhatsApp's poll update messages, so the daemon must be
+running and connected when the group votes. Votes cast on a poll that was sent
+before the daemon stored it (or with a session/database that no longer holds
+the poll's message secret) cannot be decrypted and are skipped.
+
+While WhatsApp is not connected, the dashboard shows a **Simulationsdaten
+hinzufügen** button below the QR code. It creates a test poll (using a question
+from `polls.txt`) with random yes/no votes from made-up members, so the
+**Ergebnisse** and **Namen** pages can be tried without a real account. A
+**Simulationsdaten löschen** button removes those test polls again; real polls
+are kept.
 
 The scheduler runs inside the daemon and reads the schedule every 20 seconds.
 It sends at most once per due slot, with a 30-minute grace period. If the
@@ -182,8 +214,9 @@ You can still send a one-off poll:
   --option "Ich bin am Start" --option "Ich bin raus"
 ```
 
-The daemon is send-only, so it does not read the votes. WhatsApp displays the
-results and voters inside the poll itself.
+The daemon also reads the poll votes and stores them for the **Ergebnisse**
+page. The session database keeps the poll message secrets, so votes can only be
+decrypted while the same session stays paired and the poll is still known to it.
 
 ## Cron
 

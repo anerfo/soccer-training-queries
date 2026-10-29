@@ -57,6 +57,21 @@
     </p>
   </div>
   <p class="muted small">Der QR-Code wird automatisch aktualisiert.</p>
+
+  <div class="sim-actions">
+    <form method="post" action="{{ url_for('simulate_poll') }}">
+      <button type="submit" class="secondary">Simulationsdaten hinzufügen</button>
+    </form>
+    {% if has_simulated %}
+      <form method="post" action="{{ url_for('clear_simulation') }}">
+        <button type="submit" class="secondary">Simulationsdaten löschen</button>
+      </form>
+    {% endif %}
+  </div>
+  <p class="muted small">
+    Erzeugt eine Testumfrage mit zufälligen Zu- und Absagen – funktioniert
+    ohne WhatsApp-Verbindung.
+  </p>
 </section>
 
 <script>
@@ -121,6 +136,24 @@
     <h2>Jetzt senden</h2>
   </div>
   <p class="muted">Sendet die nächste Umfrage aus <code>polls.txt</code> an die konfigurierte Gruppe.</p>
+
+  {% if next_poll %}
+    <div class="poll-preview">
+      <span class="label">Nächste Nachricht</span>
+      <p class="poll-question">{{ next_poll.question }}</p>
+      <div>
+        {% for option in next_poll.options %}
+          <span class="option">{{ option }}</span>
+        {% endfor %}
+      </div>
+      {% if next_poll_index is not none %}
+        <p class="muted small">Umfrage {{ next_poll_index + 1 }} von {{ next_poll_total }}</p>
+      {% endif %}
+    </div>
+  {% else %}
+    <p class="muted">Keine gültige Umfrage in <code>polls.txt</code> gefunden.</p>
+  {% endif %}
+
   <form method="post" action="{{ url_for('send_now') }}"
         onsubmit="return confirm('Jetzt die nächste Umfrage senden?');">
     <input type="hidden" name="group" value="{{ schedule.group }}">

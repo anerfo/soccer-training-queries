@@ -229,6 +229,130 @@ table { width: 100%; border-collapse: collapse; }
 
 .preview th { color: var(--muted); font-size: .8rem; text-transform: uppercase; }
 
+.poll-preview {
+  background: #0b0f15;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.poll-preview .label {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  font-size: .72rem;
+  font-weight: 700;
+}
+
+.poll-question { margin: 0; font-weight: 600; font-size: 1.05rem; }
+
+.vote-nav {
+  display: flex;
+  gap: 10px;
+  margin: 14px 0;
+  flex-wrap: wrap;
+}
+
+#votes-content { transition: opacity .15s ease; }
+#votes-content.is-loading { opacity: .55; }
+
+.button.disabled {
+  opacity: .45;
+  cursor: default;
+  pointer-events: none;
+}
+
+.tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 6px 0 16px;
+}
+
+.tally-item {
+  background: var(--green-soft);
+  border: 1px solid #1d4d8f;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: .9rem;
+}
+
+.tally-item strong { color: #9cc3ff; }
+
+a.tally-item {
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a.tally-item:hover { filter: brightness(1.18); }
+
+.tally-item.active {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+
+.tally-item.active strong { color: #fff; }
+
+textarea.export {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: .88rem;
+  line-height: 1.5;
+  min-height: 120px;
+  margin-bottom: 12px;
+}
+
+.contact-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.contact-toolbar input[type="search"] {
+  flex: 1 1 240px;
+  width: auto;
+}
+
+.contact-table td {
+  padding: 6px 8px;
+}
+
+.contact-table .contact-number {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  width: 40%;
+}
+
+.contact-table .contact-phone { display: block; }
+
+.contact-table .contact-whatsapp {
+  display: block;
+  color: var(--muted);
+  font-weight: 400;
+  font-size: .8rem;
+}
+
+.contact-table input[type="text"] {
+  padding: 7px 10px;
+}
+
+.contact-table tr.contact-add td {
+  border-top: 2px solid var(--line);
+  background: #0b0f15;
+}
+
+.contact-table tr.contact-add input {
+  border-style: dashed;
+}
+
+.contact-table tr[hidden] { display: none; }
+
 .option {
   display: inline-block;
   background: #141c29;
@@ -254,6 +378,14 @@ table { width: 100%; border-collapse: collapse; }
   border-radius: 12px;
   background: #fff;
   object-fit: contain;
+}
+
+.sim-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
 }
 
 .calendar { min-width: 640px; table-layout: fixed; }

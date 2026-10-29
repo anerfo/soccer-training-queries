@@ -200,6 +200,8 @@ class WebTests(unittest.TestCase):
         self.schedule_path = base / "schedule.json"
         self.schedule_state = base / "schedule_state.json"
         self.qr_path = base / "qr.png"
+        self.poll_history_path = base / "poll_history.json"
+        self.contacts_path = base / "contacts.json"
         self.service = FakeService()
         wa.save_schedule(
             self.schedule_path,
@@ -226,8 +228,15 @@ class WebTests(unittest.TestCase):
             "schedule_slots": wa.schedule_slots,
             "next_schedule_slots": wa.next_schedule_slots,
             "send_next_poll": wa.send_next_poll,
+            "choose_poll": wa.choose_poll,
             "load_poll_state": wa.load_poll_state,
             "load_schedule_state": wa.load_schedule_state,
+            "poll_history_path": self.poll_history_path,
+            "load_poll_history": wa.load_poll_history,
+            "contacts_path": self.contacts_path,
+            "load_contacts": wa.load_contacts,
+            "save_contacts": wa.save_contacts,
+            "poll_history_store": wa.PollHistoryStore(self.poll_history_path),
             "default_group": "AH Training",
             "weekdays": wa.WEEKDAYS_DE,
         }
@@ -238,9 +247,167 @@ class WebTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_pages_render(self):
-        for path in ("/", "/polls", "/schedule", "/api/status"):
+        for path in (
+            "/",
+            "/polls",
+            "/schedule",
+            "/votes",
+            "/contacts",
+            "/api/status",
+        ):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, path)
+
+    def _write_history(self):
+        store = wa.PollHistoryStore(self.poll_history_path)
+        store.record_sent_poll(
+            message_id="poll-1",
+            chat="1@g.us",
+            group_name="AH Training",
+            question="Dabei?",
+            options=["Ja", "Nein"],
+            timestamp=1_700_000_000,
+        )
+        store.record_vote(
+            poll_id="poll-1",
+            chat="1@g.us",
+            sender="491700000001@s.whatsapp.net",
+            sender_alt="",
+            pushname="Anna",
+            selected_hashes=[wa.hashlib.sha256(b"Ja").hexdigest()],
+            timestamp=1_700_000_100,
+        )
+        store.record_vote(
+            poll_id="poll-1",
+            chat="1@g.us",
+            sender="491700000002@s.whatsapp.net",
+            sender_alt="",
+            pushname="Bert",
+            selected_hashes=[wa.hashlib.sha256(b"Nein").hexdigest()],
+            timestamp=1_700_000_200,
+        )
+
+    def test_votes_page_shows_names_and_answers(self):
+        self._write_history()
+        wa.save_contacts(
+            self.contacts_path, {"491700000001": "Anna Beispiel"}
+        )
+        response = self.client.get("/votes")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("Dabei?", html)
+        self.assertIn("Anna Beispiel", html)
+        self.assertIn("Bert", html)
+        self.assertIn("Ja", html)
+        self.assertIn("Nein", html)
+
+    def test_votes_export_lists_only_names_without_header(self):
+        self._write_history()
+        response = self.client.get("/votes/export.csv")
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True).lstrip("\ufeff")
+        self.assertEqual(body, "Anna\nBert\n")
+
+    def test_votes_filter_by_answer(self):
+        self._write_history()
+
+        page = self.client.get("/votes?a=0")
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn("Anna", html)
+        self.assertNotIn("Bert", html)
+        export = (
+            self.client.get("/votes/export.csv?a=0")
+            .get_data(as_text=True)
+            .lstrip("\ufeff")
+        )
+        self.assertEqual(export, "Anna\n")
+
+        page = self.client.get("/votes?a=1")
+        html = page.get_data(as_text=True)
+        self.assertIn("Bert", html)
+        self.assertNotIn("Anna", html)
+
+    def test_contacts_page_shows_whatsapp_name_under_number(self):
+        self._write_history()
+        html = self.client.get("/contacts").get_data(as_text=True)
+        self.assertIn("contact-whatsapp", html)
+        self.assertIn(">Anna<", html)
+        self.assertIn(">Bert<", html)
+
+    def test_invalid_answer_filter_shows_all(self):
+        self._write_history()
+        page = self.client.get("/votes?a=99")
+        html = page.get_data(as_text=True)
+        self.assertIn("Anna", html)
+        self.assertIn("Bert", html)
+
+    def test_simulate_creates_poll_with_random_votes(self):
+        response = self.client.post("/simulate")
+        self.assertEqual(response.status_code, 302)
+        polls = wa.load_poll_history(self.poll_history_path)["polls"]
+        self.assertEqual(len(polls), 1)
+        poll = polls[0]
+        self.assertTrue(poll.get("simulated"))
+        self.assertGreaterEqual(len(poll["votes"]), 6)
+        for vote in poll["votes"].values():
+            self.assertTrue(vote["selected"])
+        page = self.client.get("/votes")
+        self.assertEqual(page.status_code, 200)
+
+    def test_clear_simulation_keeps_real_polls(self):
+        store = wa.PollHistoryStore(self.poll_history_path)
+        store.record_sent_poll(
+            message_id="real",
+            chat="1@g.us",
+            group_name="Echt",
+            question="Echt?",
+            options=["Ja", "Nein"],
+            timestamp=1,
+        )
+        self.client.post("/simulate")
+        self.assertEqual(
+            len(wa.load_poll_history(self.poll_history_path)["polls"]), 2
+        )
+        response = self.client.post("/simulate/clear")
+        self.assertEqual(response.status_code, 302)
+        polls = wa.load_poll_history(self.poll_history_path)["polls"]
+        self.assertEqual([poll["message_id"] for poll in polls], ["real"])
+
+    def test_simulation_buttons_show_while_disconnected(self):
+        self.service.connected.clear()
+        page = self.client.get("/")
+        html = page.get_data(as_text=True)
+        self.assertIn("Simulationsdaten hinzufügen", html)
+        self.assertNotIn("Simulationsdaten löschen", html)
+
+        self.client.post("/simulate")
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn("Simulationsdaten löschen", html)
+
+    def test_contacts_mapping_is_saved(self):
+        response = self.client.post(
+            "/contacts",
+            data={
+                "number": ["491700000001", "491700000002", ""],
+                "name": ["Anna", "Bert", "Ignoriert"],
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            wa.load_contacts(self.contacts_path),
+            {"491700000001": "Anna", "491700000002": "Bert"},
+        )
+
+    def test_contacts_textarea_is_still_accepted(self):
+        response = self.client.post(
+            "/contacts",
+            data={"contacts": "491700000001 = Anna\n# Kommentar\n"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            wa.load_contacts(self.contacts_path), {"491700000001": "Anna"}
+        )
 
     def test_qr_code_is_only_served_while_disconnected(self):
         self.qr_path.write_bytes(b"\x89PNG\r\n\x1a\nfake")

@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Ergebnisse · FVF AH{% endblock %}
+{% block content %}
+<h1>Umfragen-Ergebnisse</h1>
+
+<div id="votes-content">
+{% if not poll %}
+  <section class="panel">
+    <p class="muted">
+      Noch keine gesendeten Umfragen mit Stimmen erfasst. Ergebnisse
+      erscheinen hier, sobald über dieses Konto eine Umfrage gesendet und
+      von der Gruppe abgestimmt wurde.
+    </p>
+  </section>
+{% else %}
+  <section class="panel">
+    <div class="panel-head">
+      <h2>{{ poll.question }}</h2>
+      <span class="muted small">Umfrage {{ index + 1 }} von {{ total }}</span>
+    </div>
+    <p class="muted small">
+      {{ poll.group_name }}{% if poll_sent %} · gesendet {{ poll_sent }}{% endif %}
+    </p>
+
+    <div class="vote-nav">
+      {% if index + 1 < total %}
+        <a class="button secondary" href="{{ url_for('votes_page', i=index + 1, a=answer_index) }}">← Ältere</a>
+      {% else %}
+        <span class="button secondary disabled">← Ältere</span>
+      {% endif %}
+      {% if index > 0 %}
+        <a class="button secondary" href="{{ url_for('votes_page', i=index - 1, a=answer_index) }}">Neuere →</a>
+      {% else %}
+        <span class="button secondary disabled">Neuere →</span>
+      {% endif %}
+    </div>
+
+    <p class="muted small">Auf eine Antwort klicken, um die Ansicht zu filtern.</p>
+    <div class="tally">
+      <a class="tally-item {{ 'active' if answer_index is none else '' }}"
+         href="{{ url_for('votes_page', i=index) }}">
+        <strong>{{ voter_count }}</strong> Alle
+      </a>
+      {% for option, count in option_counts.items() %}
+        <a class="tally-item {{ 'active' if answer_index == loop.index0 else '' }}"
+           href="{{ url_for('votes_page', i=index, a=loop.index0) }}">
+          <strong>{{ count }}</strong> {{ option }}
+        </a>
+      {% endfor %}
+    </div>
+
+    {% if rows %}
+      <div class="table-wrap">
+        <table class="preview">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Nummer</th>
+              <th>Antwort</th>
+              <th>Zeit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td>
+                  {% if row.name %}
+                    {{ row.name }}
+                  {% elif row.pushname %}
+                    <span class="muted">{{ row.pushname }}</span>
+                  {% else %}
+                    <span class="muted">—</span>
+                  {% endif %}
+                </td>
+                <td class="muted">{{ row.number or row.jid }}</td>
+                <td>
+                  {% for selected in row.selected %}
+                    <span class="option">{{ selected }}</span>
+                  {% endfor %}
+                </td>
+                <td class="muted small">{{ row.time }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">Noch keine Stimmen für diese Umfrage erfasst.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Für Excel kopieren</h2>
+      <div class="form-actions">
+        <a class="button secondary" href="{{ url_for('contacts_page') }}">Namen zuordnen</a>
+        <a class="button secondary" href="{{ url_for('votes_export', i=index, a=answer_index) }}">CSV herunterladen</a>
+      </div>
+    </div>
+    <p class="muted small">
+      {% if active_answer %}
+        Gefiltert nach <strong>{{ active_answer }}</strong>:
+      {% endif %}
+      nur die Namen, einer pro Zeile, ohne Kopfzeile.
+    </p>
+    <textarea class="export" readonly rows="{{ [rows|length + 2, 4]|max }}" onclick="this.select()">{{ names_export }}</textarea>
+    <div class="form-actions">
+      <button type="button" class="secondary" id="copy-export">In Zwischenablage kopieren</button>
+    </div>
+  </section>
+{% endif %}
+</div>
+
+<script>
+(function () {
+  var container = document.getElementById("votes-content");
+  if (!container) return;
+
+  function copyExport(button) {
+    var area = document.querySelector("textarea.export");
+    if (!area) return;
+    area.focus();
+    area.select();
+    var done = function () {
+      var label = button.textContent;
+      button.textContent = "Kopiert!";
+      setTimeout(function () { button.textContent = label; }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(area.value).then(done).catch(function () {
+        try { document.execCommand("copy"); done(); } catch (e) {}
+      });
+    } else {
+      try { document.execCommand("copy"); done(); } catch (e) {}
+    }
+  }
+
+  function swap(url, push) {
+    container.classList.add("is-loading");
+    fetch(url, { headers: { "X-Requested-With": "fetch" } })
+      .then(function (response) {
+        if (!response.ok) throw new Error(String(response.status));
+        return response.text();
+      })
+      .then(function (html) {
+        var doc = new DOMParser().parseFromString(html, "text/html");
+        var next = doc.getElementById("votes-content");
+        if (!next) throw new Error("missing content");
+        container.innerHTML = next.innerHTML;
+        if (push) history.pushState({}, "", url);
+      })
+      .catch(function () { window.location.href = url; })
+      .finally(function () { container.classList.remove("is-loading"); });
+  }
+
+  container.addEventListener("click", function (event) {
+    var button = event.target.closest("#copy-export");
+    if (button) {
+      event.preventDefault();
+      copyExport(button);
+      return;
+    }
+
+    var link = event.target.closest('a[href^="/votes?"]');
+    if (!link) return;
+    if (
+      event.metaKey || event.ctrlKey || event.shiftKey ||
+      event.altKey || event.button !== 0
+    ) return;
+    event.preventDefault();
+    swap(link.getAttribute("href"), true);
+  });
+
+  window.addEventListener("popstate", function () {
+    swap(location.pathname + location.search, false);
+  });
+})();
+</script>
+{% endblock %}

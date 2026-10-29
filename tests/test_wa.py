@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import wa
 from wa import (
     choose_poll,
     cmd_poll_next,
@@ -216,6 +217,184 @@ class NormalizeTextTests(unittest.TestCase):
 
     def test_text_is_preserved(self):
         self.assertEqual(normalize_text("  hello\n"), "  hello\n")
+
+
+class PollHistoryStoreTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.history_path = Path(self.temp_dir.name) / "history.json"
+        self.store = wa.PollHistoryStore(self.history_path)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_vote_hashes_are_mapped_to_option_names(self):
+        self.store.record_sent_poll(
+            message_id="poll-1",
+            chat="1@g.us",
+            group_name="Gruppe",
+            question="Dabei?",
+            options=["Ja", "Nein"],
+            timestamp=100,
+        )
+        ja_hash = wa.hashlib.sha256(b"Ja").hexdigest()
+        nein_hash = wa.hashlib.sha256(b"Nein").hexdigest()
+        self.assertTrue(
+            self.store.record_vote(
+                poll_id="poll-1",
+                chat="1@g.us",
+                sender="491700000001@s.whatsapp.net",
+                sender_alt="",
+                pushname="Anna",
+                selected_hashes=[ja_hash],
+                timestamp=101,
+            )
+        )
+        self.store.record_vote(
+            poll_id="poll-1",
+            chat="1@g.us",
+            sender="491700000002@s.whatsapp.net",
+            sender_alt="",
+            pushname="Bert",
+            selected_hashes=[nein_hash],
+            timestamp=102,
+        )
+        poll = wa.load_poll_history(self.history_path)["polls"][0]
+        votes = poll["votes"]
+        self.assertEqual(
+            votes["491700000001@s.whatsapp.net"]["selected"], ["Ja"]
+        )
+        self.assertEqual(
+            votes["491700000002@s.whatsapp.net"]["selected"], ["Nein"]
+        )
+
+    def test_unknown_poll_vote_is_ignored(self):
+        self.assertFalse(
+            self.store.record_vote(
+                poll_id="missing",
+                chat="1@g.us",
+                sender="1@s.whatsapp.net",
+                sender_alt="",
+                pushname="X",
+                selected_hashes=[],
+                timestamp=1,
+            )
+        )
+
+
+class GroupContactsTests(unittest.TestCase):
+    def setUp(self):
+        from neonize.proto import Neonize_pb2 as neonize_proto
+
+        self.temp_dir = tempfile.TemporaryDirectory()
+        base = Path(self.temp_dir.name)
+
+        def jid(user, server):
+            return neonize_proto.JID(User=user, Server=server, IsEmpty=False)
+
+        group = neonize_proto.GroupInfo()
+        group.JID.CopyFrom(jid("120363", "g.us"))
+        group.GroupName.Name = "Gruppe"
+        first = group.Participants.add()
+        first.JID.CopyFrom(jid("491700000001", "s.whatsapp.net"))
+        first.PhoneNumber.CopyFrom(jid("491700000001", "s.whatsapp.net"))
+        first.DisplayName = "Anna"
+        second = group.Participants.add()
+        second.JID.CopyFrom(jid("491700000002", "s.whatsapp.net"))
+        second.PhoneNumber.CopyFrom(jid("491700000002", "s.whatsapp.net"))
+        second.DisplayName = "Bert"
+
+        contact = neonize_proto.Contact(
+            JID=jid("491700000001", "s.whatsapp.net")
+        )
+        contact.Info.FullName = "Anna Beispiel"
+
+        self.group = group
+
+        class FakeClient:
+            def __init__(self, group, contacts):
+                self.group = group
+                self.contact = mock.MagicMock()
+                self.contact.get_all_contacts.return_value = contacts
+
+            def get_joined_groups(self):
+                return [self.group]
+
+            def get_group_info(self, _jid):
+                return self.group
+
+        self.service = wa.WhatsAppService(
+            base / "wa.db", base / "qr.png", base / "history.json"
+        )
+        self.service.connected.set()
+        self.service.client = FakeClient(group, [contact])
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_names_come_from_phonebook_then_display_name(self):
+        contacts = self.service.group_contacts("Gruppe")
+        self.assertEqual(contacts["491700000001"], "Anna Beispiel")
+        self.assertEqual(contacts["491700000002"], "Bert")
+
+    def test_directory_keeps_whatsapp_name(self):
+        directory = self.service.group_directory("Gruppe")
+        self.assertEqual(directory["491700000001"]["name"], "Anna Beispiel")
+        self.assertEqual(directory["491700000001"]["whatsapp"], "Anna")
+        self.assertEqual(directory["491700000002"]["name"], "Bert")
+        self.assertEqual(directory["491700000002"]["whatsapp"], "Bert")
+
+
+class HandlePollVoteTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        base = Path(self.temp_dir.name)
+        self.history_path = base / "history.json"
+        self.service = wa.WhatsAppService(
+            base / "wa.db", base / "qr.png", self.history_path
+        )
+        self.service.history.record_sent_poll(
+            message_id="poll-1",
+            chat="120363@g.us",
+            group_name="Gruppe",
+            question="Dabei?",
+            options=["Ja", "Nein"],
+            timestamp=100,
+        )
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def _event(self):
+        from neonize.proto import Neonize_pb2 as neonize_proto
+
+        event = neonize_proto.Message()
+        event.Info.ID = "vote-msg"
+        event.Info.Pushname = "Anna"
+        event.Info.Timestamp = 200
+        source = event.Info.MessageSource
+        source.Chat.User = "120363"
+        source.Chat.Server = "g.us"
+        source.Sender.User = "491700000001"
+        source.Sender.Server = "s.whatsapp.net"
+        event.Message.pollUpdateMessage.pollCreationMessageKey.ID = "poll-1"
+        return event
+
+    def test_poll_vote_is_recorded(self):
+        from neonize.proto.waE2E import WAWebProtobufsE2E_pb2 as e2e
+
+        vote = e2e.PollVoteMessage(
+            selectedOptions=[wa.hashlib.sha256(b"Ja").digest()]
+        )
+        self.service.client = mock.MagicMock()
+        self.service.client.decrypt_poll_vote.return_value = vote
+
+        self.service._handle_message(self._event())
+
+        poll = wa.load_poll_history(self.history_path)["polls"][0]
+        vote_entry = poll["votes"]["491700000001@s.whatsapp.net"]
+        self.assertEqual(vote_entry["selected"], ["Ja"])
+        self.assertEqual(vote_entry["pushname"], "Anna")
 
 
 if __name__ == "__main__":
