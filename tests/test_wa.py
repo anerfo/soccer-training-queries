@@ -339,6 +339,27 @@ class PollHistoryStoreTests(unittest.TestCase):
             poll["votes"]["1@s.whatsapp.net"]["timestamp"], 1_793_306_491
         )
 
+    def test_delete_poll_and_clear_all(self):
+        for message_id in ("a", "b"):
+            self.store.record_sent_poll(
+                message_id=message_id,
+                chat="1@g.us",
+                group_name="Gruppe",
+                question="Dabei?",
+                options=["Ja", "Nein"],
+                timestamp=100,
+            )
+        self.assertTrue(self.store.delete_poll("a"))
+        self.assertFalse(self.store.delete_poll("missing"))
+        polls = wa.load_poll_history(self.history_path)["polls"]
+        self.assertEqual([poll["message_id"] for poll in polls], ["b"])
+
+        self.assertEqual(self.store.clear_all(), 1)
+        self.assertEqual(
+            wa.load_poll_history(self.history_path)["polls"], []
+        )
+        self.assertEqual(self.store.clear_all(), 0)
+
     def test_unknown_poll_vote_is_ignored(self):
         self.assertFalse(
             self.store.record_vote(

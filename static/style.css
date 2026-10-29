@@ -290,6 +290,20 @@ table { width: 100%; border-collapse: collapse; }
   flex-wrap: wrap;
 }
 
+.poll-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.inline-form { margin: 0; }
+
+.small-button {
+  padding: 6px 10px;
+  font-size: .82rem;
+}
+
 #votes-content { transition: opacity .15s ease; }
 #votes-content.is-loading { opacity: .55; }
 

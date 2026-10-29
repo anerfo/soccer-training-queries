@@ -16,7 +16,19 @@
   <section class="panel">
     <div class="panel-head">
       <h2>{{ poll.question }}</h2>
-      <span class="muted small">Umfrage {{ index + 1 }} von {{ total }}</span>
+      <div class="poll-head-actions">
+        <span class="muted small">Umfrage {{ index + 1 }} von {{ total }}</span>
+        <form
+          method="post"
+          action="{{ url_for('delete_poll') }}"
+          class="inline-form"
+          onsubmit="return confirm('Diese Umfrage und ihre Stimmen lokal löschen?');"
+        >
+          <input type="hidden" name="message_id" value="{{ poll.message_id }}">
+          <input type="hidden" name="i" value="{{ index }}">
+          <button type="submit" class="secondary small-button">Löschen</button>
+        </form>
+      </div>
     </div>
     <p class="muted small">
       {{ poll.group_name }}{% if poll_sent %} · gesendet {{ poll_sent }}{% endif %}
@@ -95,6 +107,14 @@
       <div class="form-actions">
         <a class="button secondary" href="{{ url_for('contacts_page') }}">Namen zuordnen</a>
         <a class="button secondary" href="{{ url_for('votes_export', i=index, a=answer_index) }}">CSV herunterladen</a>
+        <form
+          method="post"
+          action="{{ url_for('clear_polls') }}"
+          class="inline-form"
+          onsubmit="return confirm('Wirklich ALLE gespeicherten Umfrage-Ergebnisse lokal löschen?');"
+        >
+          <button type="submit" class="secondary">Alle Ergebnisse löschen</button>
+        </form>
       </div>
     </div>
     <p class="muted small">

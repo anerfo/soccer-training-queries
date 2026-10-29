@@ -943,6 +943,33 @@ def create_app(
             },
         )
 
+    @app.post("/votes/delete")
+    def delete_poll() -> Any:
+        ctx = _ctx()
+        store = ctx.get("poll_history_store")
+        message_id = request.form.get("message_id", "").strip()
+        index = request.form.get("i", "0")
+        if store is None:
+            flash("Löschen ist nicht verfügbar.", "error")
+        elif store.delete_poll(message_id):
+            flash("Umfrage gelöscht.", "success")
+        else:
+            flash("Umfrage nicht gefunden.", "error")
+        return redirect(url_for("votes_page", i=index))
+
+    @app.post("/votes/clear")
+    def clear_polls() -> Any:
+        store = _ctx().get("poll_history_store")
+        if store is None:
+            flash("Löschen ist nicht verfügbar.", "error")
+            return redirect(url_for("votes_page"))
+        removed = store.clear_all()
+        if removed:
+            flash(f"{removed} Umfrage(n) gelöscht.", "success")
+        else:
+            flash("Keine Umfragen zum Löschen vorhanden.", "warning")
+        return redirect(url_for("votes_page"))
+
     @app.get("/qr.png")
     def qr_code() -> Any:
         if service.connected.is_set():

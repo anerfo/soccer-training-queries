@@ -264,6 +264,31 @@ class PollHistoryStore:
             history["polls"] = polls[: self.limit]
             save_poll_history(self.path, history)
 
+    def delete_poll(self, message_id: str) -> bool:
+        if not message_id:
+            return False
+        with self._lock:
+            history = load_poll_history(self.path)
+            before = len(history["polls"])
+            history["polls"] = [
+                poll
+                for poll in history["polls"]
+                if poll.get("message_id") != message_id
+            ]
+            if len(history["polls"]) == before:
+                return False
+            save_poll_history(self.path, history)
+            return True
+
+    def clear_all(self) -> int:
+        with self._lock:
+            history = load_poll_history(self.path)
+            removed = len(history["polls"])
+            if removed:
+                history["polls"] = []
+                save_poll_history(self.path, history)
+            return removed
+
     def clear_simulated(self) -> int:
         with self._lock:
             history = load_poll_history(self.path)

@@ -349,6 +349,26 @@ class WebTests(unittest.TestCase):
         body = response.get_data(as_text=True).lstrip("\ufeff")
         self.assertEqual(body, "Anna\nBert\n")
 
+    def test_delete_and_clear_polls(self):
+        self._write_history()
+        html = self.client.get("/votes").get_data(as_text=True)
+        self.assertIn("Löschen", html)
+        self.assertIn("Alle Ergebnisse löschen", html)
+
+        response = self.client.post(
+            "/votes/delete", data={"message_id": "poll-1", "i": "0"}
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            wa.load_poll_history(self.poll_history_path)["polls"], []
+        )
+
+        self._write_history()
+        self.client.post("/votes/clear")
+        self.assertEqual(
+            wa.load_poll_history(self.poll_history_path)["polls"], []
+        )
+
     def test_votes_filter_by_answer(self):
         self._write_history()
 
