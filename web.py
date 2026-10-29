@@ -494,6 +494,26 @@ def create_app(
     def health() -> dict[str, Any]:
         return {"ok": True}
 
+    @app.get("/group-check")
+    def group_check() -> Any:
+        checker = _ctx().get("group_check")
+        query = request.args.get("group", "")
+        if checker is None:
+            return jsonify(ok=False, available=False, exists=False)
+        if not service.connected.is_set():
+            return jsonify(ok=True, available=False, exists=False)
+        try:
+            result = checker(query)
+        except Exception as exc:
+            log.exception("group check failed")
+            return jsonify(
+                ok=False,
+                available=False,
+                exists=False,
+                error=str(exc),
+            )
+        return jsonify(ok=True, **result)
+
     @app.get("/login")
     def login() -> Any:
         if auth is None:

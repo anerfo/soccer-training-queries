@@ -237,6 +237,12 @@ class WebTests(unittest.TestCase):
             "contacts_path": self.contacts_path,
             "load_contacts": wa.load_contacts,
             "save_contacts": wa.save_contacts,
+            "group_check": lambda query: {
+                "available": True,
+                "exists": query == "AH Training",
+                "name": "AH Training",
+                "jid": "1@g.us",
+            },
             "poll_history_store": wa.PollHistoryStore(self.poll_history_path),
             "default_group": "AH Training",
             "weekdays": wa.WEEKDAYS_DE,
@@ -468,6 +474,28 @@ class WebTests(unittest.TestCase):
             self.assertTrue(sess.get("_oidc_state"))
             self.assertTrue(sess.get("_oidc_verifier"))
             self.assertTrue(sess.get("_oidc_nonce"))
+
+    def test_group_check_endpoint(self):
+        response = self.client.get(
+            "/group-check", query_string={"group": "AH Training"}
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertTrue(data["available"])
+        self.assertTrue(data["exists"])
+        self.assertEqual(data["name"], "AH Training")
+
+        missing = self.client.get(
+            "/group-check", query_string={"group": "Nope"}
+        ).get_json()
+        self.assertTrue(missing["available"])
+        self.assertFalse(missing["exists"])
+
+        self.service.connected.clear()
+        offline = self.client.get(
+            "/group-check", query_string={"group": "AH Training"}
+        ).get_json()
+        self.assertFalse(offline["available"])
 
     def test_simulate_creates_poll_with_random_votes(self):
         response = self.client.post("/simulate")

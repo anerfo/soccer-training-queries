@@ -49,7 +49,17 @@
 
     <label class="wide">
       Gruppe (Name oder JID)
-      <input type="text" name="group" value="{{ schedule.group }}" placeholder="z. B. AH Training">
+      <span class="group-field">
+        <input
+          type="text"
+          id="group-input"
+          name="group"
+          value="{{ schedule.group }}"
+          placeholder="z. B. AH Training"
+          autocomplete="off"
+        >
+        <span id="group-status" class="group-status" aria-live="polite"></span>
+      </span>
     </label>
 
     <label class="wide">
@@ -138,4 +148,58 @@
     <p class="muted small">Zuletzt gesendet: {{ sched_state.last_sent_at }}</p>
   {% endif %}
 </section>
+
+<script>
+(function () {
+  var input = document.getElementById("group-input");
+  var status = document.getElementById("group-status");
+  if (!input || !status) return;
+
+  var timer = null;
+  var seq = 0;
+
+  function setStatus(kind, text) {
+    status.className = "group-status" + (kind ? " " + kind : "");
+    status.textContent = text;
+  }
+
+  function check() {
+    var value = input.value.trim();
+    if (!value) {
+      setStatus("", "");
+      return;
+    }
+    var current = ++seq;
+    fetch("/group-check?group=" + encodeURIComponent(value), {
+      headers: { "Accept": "application/json" },
+      cache: "no-store"
+    })
+      .then(function (response) {
+        if (!response.ok) throw new Error("http " + response.status);
+        return response.json();
+      })
+      .then(function (data) {
+        if (current !== seq) return;
+        if (!data.available) {
+          setStatus("unknown", "Prüfung nur mit WhatsApp-Verbindung");
+        } else if (data.exists) {
+          setStatus("ok", "✓ " + (data.name || "Gruppe gefunden"));
+        } else {
+          setStatus("bad", "Gruppe nicht gefunden");
+        }
+      })
+      .catch(function () {
+        if (current === seq) setStatus("", "");
+      });
+  }
+
+  input.addEventListener("input", function () {
+    clearTimeout(timer);
+    timer = setTimeout(check, 400);
+  });
+  input.addEventListener("blur", check);
+
+  if (input.value.trim()) check();
+})();
+</script>
 {% endblock %}

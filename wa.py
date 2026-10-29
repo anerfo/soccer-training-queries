@@ -19,6 +19,7 @@ import socket
 import socketserver
 import sys
 import threading
+import time
 from datetime import date, datetime, time as dt_time, timedelta
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,7 @@ DEFAULT_SCHEDULE_STATE = DEFAULT_DATA_DIR / "schedule_state.json"
 DEFAULT_POLL_HISTORY = DEFAULT_DATA_DIR / "poll_history.json"
 DEFAULT_CONTACTS = DEFAULT_DATA_DIR / "contacts.json"
 POLL_HISTORY_LIMIT = 50
+GROUPS_CACHE_SECONDS = 10
 
 WEEKDAYS_DE = (
     "Montag",
@@ -646,6 +648,9 @@ class WhatsAppService:
         self.failure: str | None = None
         self._lock = threading.Lock()
         self._connect_thread: threading.Thread | None = None
+        self._groups_cache: list[dict[str, str]] | None = None
+        self._groups_cache_at = 0.0
+        self._groups_cache_lock = threading.Lock()
 
     def start(self) -> None:
         from neonize.client import NewClient
@@ -838,6 +843,54 @@ class WhatsAppService:
         self._wait_connected()
         with self._lock:
             return {"groups": self._joined_groups()}
+
+    def _cached_groups(self) -> list[dict[str, str]]:
+        now = time.monotonic()
+        with self._groups_cache_lock:
+            if (
+                self._groups_cache is not None
+                and now - self._groups_cache_at < GROUPS_CACHE_SECONDS
+            ):
+                return self._groups_cache
+        groups = self._joined_groups()
+        with self._groups_cache_lock:
+            self._groups_cache = groups
+            self._groups_cache_at = now
+        return groups
+
+    def group_check(self, query: str) -> dict[str, Any]:
+        """Tell whether a group name/JID currently exists in the account."""
+        query = (query or "").strip()
+        if not query:
+            return {"available": True, "exists": False}
+        if not self.connected.is_set():
+            return {"available": False, "exists": False}
+        try:
+            with self._lock:
+                groups = self._cached_groups()
+        except Exception as exc:
+            log.warning("group check failed: %s", exc)
+            return {
+                "available": False,
+                "exists": False,
+                "error": str(exc),
+            }
+
+        if query.endswith("@g.us"):
+            for group in groups:
+                if group["jid"] == query:
+                    return {"available": True, "exists": True, **group}
+            return {"available": True, "exists": False}
+
+        try:
+            resolved = match_group(groups, query)
+        except (LookupError, ValueError) as exc:
+            return {
+                "available": True,
+                "exists": False,
+                "error": str(exc),
+            }
+        return {"available": True, "exists": True, **resolved}
 
     @staticmethod
     def _participant_number(participant: Any) -> str:
@@ -1196,6 +1249,7 @@ def serve(args: argparse.Namespace) -> int:
                     "save_contacts": save_contacts,
                     "group_contacts": service.group_contacts,
                     "group_directory": service.group_directory,
+                    "group_check": service.group_check,
                     "poll_history_store": service.history,
                     "default_group": os.environ.get("WA_GROUP", ""),
                     "weekdays": WEEKDAYS_DE,

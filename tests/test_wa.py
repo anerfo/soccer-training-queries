@@ -344,6 +344,27 @@ class GroupContactsTests(unittest.TestCase):
         self.assertEqual(directory["491700000002"]["name"], "Bert")
         self.assertEqual(directory["491700000002"]["whatsapp"], "Bert")
 
+    def test_group_check_existing_name_and_jid(self):
+        by_name = self.service.group_check("Gruppe")
+        self.assertTrue(by_name["available"])
+        self.assertTrue(by_name["exists"])
+        self.assertEqual(by_name["name"], "Gruppe")
+
+        by_jid = self.service.group_check("120363@g.us")
+        self.assertTrue(by_jid["exists"])
+        self.assertEqual(by_jid["jid"], "120363@g.us")
+
+    def test_group_check_unknown_group(self):
+        result = self.service.group_check("Gibt es nicht")
+        self.assertTrue(result["available"])
+        self.assertFalse(result["exists"])
+
+    def test_group_check_unavailable_when_disconnected(self):
+        self.service.connected.clear()
+        result = self.service.group_check("Gruppe")
+        self.assertFalse(result["available"])
+        self.assertFalse(result["exists"])
+
 
 class HandlePollVoteTests(unittest.TestCase):
     def setUp(self):
