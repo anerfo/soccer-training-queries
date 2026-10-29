@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="FVF AH Fußball">
+  <defs>
+    <clipPath id="ball">
+      <circle cx="32" cy="32" r="31"/>
+    </clipPath>
+  </defs>
+  <circle cx="32" cy="32" r="31" fill="#2563eb" stroke="#05070c" stroke-width="2"/>
+  <g clip-path="url(#ball)" fill="#05070c">
+    <polygon points="32,4 38,9 36,16 28,16 26,9"/>
+    <polygon points="7,21 13,17 19,21 17,28 10,28"/>
+    <polygon points="57,21 51,17 45,21 47,28 54,28"/>
+    <polygon points="15,51 20,46 27,48 27,55 20,58"/>
+    <polygon points="49,51 44,46 37,48 37,55 44,58"/>
+  </g>
+  <path d="M23 27c0-5 4-8 9-8 6 0 10 3 10 8 0 4-2 6-6 9-2 1-3 2-3 4v1"
+        fill="none" stroke="#05070c" stroke-width="6"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="33" cy="49" r="3.6" fill="#05070c"/>
+</svg>

@@ -528,6 +528,14 @@ class WebTests(unittest.TestCase):
             self.assertTrue(sess.get("_oidc_verifier"))
             self.assertTrue(sess.get("_oidc_nonce"))
 
+    def test_favicon_svg_is_served_and_linked(self):
+        response = self.client.get("/static/favicon.svg")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("image/svg+xml", response.mimetype)
+        self.assertIn(b"<svg", response.data)
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn("favicon.svg", html)
+
     def test_mobile_nav_toggle_markup(self):
         html = self.client.get("/").get_data(as_text=True)
         self.assertIn('id="nav-toggle"', html)
