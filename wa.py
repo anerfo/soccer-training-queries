@@ -630,6 +630,41 @@ def _raise_ambiguous(query: str, matches: list[dict[str, str]]) -> None:
     )
 
 
+def _install_poll_vote_workaround() -> None:
+    """Fix neonize 0.5.2's broken ``DecryptPollVote`` FFI return type.
+
+    The library attaches its ``consume_bytes_struct`` errcheck to most
+    functions returning ``*C.struct_BytesReturn`` but forgot
+    ``DecryptPollVote``. Without the errcheck the call yields a ``LP_Bytes``
+    pointer and protobuf parsing fails with
+    ``TypeError: expected bytes, LP_Bytes found``.
+    """
+    try:
+        import ctypes
+
+        from neonize import _binder
+    except Exception:
+        log.debug("could not patch neonize poll vote binding", exc_info=True)
+        return
+
+    gocode = getattr(_binder, "gocode", None)
+    if gocode is None or not hasattr(gocode, "DecryptPollVote"):
+        return
+
+    def _consume(result: Any, _func: Any, _args: Any) -> bytes:
+        if not result:
+            return b""
+        try:
+            contents = result.contents
+            if not contents.ptr or contents.size == 0:
+                return b""
+            return ctypes.string_at(contents.ptr, contents.size)
+        finally:
+            gocode.FreeBytesStruct(result)
+
+    gocode.DecryptPollVote.errcheck = _consume
+
+
 class WhatsAppService:
     def __init__(
         self,
@@ -662,6 +697,8 @@ class WhatsAppService:
             MessageEv,
             TemporaryBanEv,
         )
+
+        _install_poll_vote_workaround()
 
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         try:

@@ -219,6 +219,41 @@ class NormalizeTextTests(unittest.TestCase):
         self.assertEqual(normalize_text("  hello\n"), "  hello\n")
 
 
+class PollVoteWorkaroundTests(unittest.TestCase):
+    def test_errcheck_converts_bytes_struct_and_frees_it(self):
+        import ctypes
+
+        from neonize import _binder
+
+        class FakeFunc:
+            errcheck = None
+
+        class FakeGoCode:
+            def __init__(self):
+                self.DecryptPollVote = FakeFunc()
+                self.freed = []
+                self.FreeBytesStruct = self.freed.append
+
+        fake = FakeGoCode()
+        with mock.patch.object(_binder, "gocode", fake):
+            wa._install_poll_vote_workaround()
+
+            buffer = ctypes.create_string_buffer(b"hello")
+            contents = mock.Mock()
+            contents.ptr = ctypes.addressof(buffer)
+            contents.size = 5
+            result = mock.Mock()
+            result.contents = contents
+
+            self.assertEqual(
+                fake.DecryptPollVote.errcheck(result, None, None), b"hello"
+            )
+            self.assertEqual(fake.freed, [result])
+            self.assertEqual(
+                fake.DecryptPollVote.errcheck(None, None, None), b""
+            )
+
+
 class PollHistoryStoreTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
