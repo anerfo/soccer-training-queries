@@ -13,7 +13,7 @@ import time
 import uuid
 from datetime import date, datetime
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo
 
 from flask import (
@@ -641,6 +641,13 @@ def create_app(
                     )
                 except Exception:
                     target = ""
+            if not target and auth.config.issuer:
+                # Authelia-style portals expose their logout page at /logout
+                # and accept ?rd= to redirect back to the app afterwards.
+                target = (
+                    f"{auth.config.issuer}/logout?rd="
+                    + quote(url_for("login", _external=True), safe="")
+                )
             if target:
                 return redirect(target)
         return redirect(url_for("login"))

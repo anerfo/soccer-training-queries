@@ -190,6 +190,15 @@ class OIDCLoginFlowTests(unittest.TestCase):
             401,
         )
 
+    def test_logout_falls_back_to_provider_portal(self):
+        response = self.client.get("/logout")
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            response.headers["Location"].startswith(
+                self.issuer + "/logout?rd="
+            )
+        )
+
     def test_logout_redirects_to_configured_logout_url(self):
         config = OIDCConfig(
             issuer=self.issuer,
