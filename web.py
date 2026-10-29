@@ -256,12 +256,17 @@ def _names_export(rows: list[dict[str, Any]]) -> str:
 
 def _format_timestamp(value: Any) -> str:
     try:
-        stamp = int(value)
+        stamp = float(value)
     except (TypeError, ValueError):
         return ""
     if stamp <= 0:
         return ""
-    return datetime.fromtimestamp(stamp).strftime("%d.%m.%Y %H:%M")
+    while stamp > 1e11:
+        stamp /= 1000.0
+    try:
+        return datetime.fromtimestamp(stamp).strftime("%d.%m.%Y %H:%M")
+    except (OverflowError, OSError, ValueError):
+        return ""
 
 
 def _month_param(value: str | None) -> tuple[int, int, str]:

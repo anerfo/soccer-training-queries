@@ -303,6 +303,42 @@ class PollHistoryStoreTests(unittest.TestCase):
             votes["491700000002@s.whatsapp.net"]["selected"], ["Nein"]
         )
 
+    def test_timestamps_are_normalized_to_seconds(self):
+        self.assertEqual(
+            wa.normalize_epoch(1_793_306_491_000), 1_793_306_491
+        )
+        self.assertEqual(
+            wa.normalize_epoch(1_793_306_491_000_000), 1_793_306_491
+        )
+        self.assertEqual(wa.normalize_epoch(1_793_306_491), 1_793_306_491)
+        self.assertEqual(wa.normalize_epoch(0), 0)
+        self.assertEqual(wa.normalize_epoch("nope"), 0)
+
+        self.store.record_sent_poll(
+            message_id="poll-ms",
+            chat="1@g.us",
+            group_name="Gruppe",
+            question="Dabei?",
+            options=["Ja", "Nein"],
+            timestamp=1_793_306_491_000,
+        )
+        self.store.record_vote(
+            poll_id="poll-ms",
+            chat="1@g.us",
+            sender="1@s.whatsapp.net",
+            sender_alt="",
+            pushname="Anna",
+            selected_hashes=[
+                wa.hashlib.sha256(b"Ja").hexdigest()
+            ],
+            timestamp=1_793_306_491_000,
+        )
+        poll = wa.load_poll_history(self.history_path)["polls"][0]
+        self.assertEqual(poll["sent_at"], 1_793_306_491)
+        self.assertEqual(
+            poll["votes"]["1@s.whatsapp.net"]["timestamp"], 1_793_306_491
+        )
+
     def test_unknown_poll_vote_is_ignored(self):
         self.assertFalse(
             self.store.record_vote(

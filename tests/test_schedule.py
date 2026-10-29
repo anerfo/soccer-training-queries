@@ -309,6 +309,39 @@ class WebTests(unittest.TestCase):
         self.assertIn("Ja", html)
         self.assertIn("Nein", html)
 
+    def test_votes_page_handles_millisecond_timestamps(self):
+        import json
+
+        self.poll_history_path.write_text(
+            json.dumps(
+                {
+                    "polls": [
+                        {
+                            "message_id": "p",
+                            "chat": "1@g.us",
+                            "group_name": "Gruppe",
+                            "question": "Dabei?",
+                            "options": ["Ja", "Nein"],
+                            "sent_at": 1_793_306_491_000,
+                            "votes": {
+                                "1@s.whatsapp.net": {
+                                    "sender": "1@s.whatsapp.net",
+                                    "sender_alt": "",
+                                    "pushname": "Anna",
+                                    "selected": ["Ja"],
+                                    "timestamp": 1_793_306_491_000,
+                                }
+                            },
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        response = self.client.get("/votes")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("2026", response.get_data(as_text=True))
+
     def test_votes_export_lists_only_names_without_header(self):
         self._write_history()
         response = self.client.get("/votes/export.csv")

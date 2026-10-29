@@ -196,6 +196,19 @@ def save_contacts(path: Path, contacts: dict[str, str]) -> None:
     _save_json_object(path, contacts)
 
 
+def normalize_epoch(value: Any) -> int:
+    """Return Unix seconds, accepting s/ms/µs/ns timestamps."""
+    try:
+        stamp = float(value)
+    except (TypeError, ValueError):
+        return 0
+    if stamp <= 0:
+        return 0
+    while stamp > 1e11:
+        stamp /= 1000.0
+    return int(stamp)
+
+
 def poll_option_hashes(options: list[str]) -> dict[str, str]:
     """Map hex(SHA256(option name)) to the option name.
 
@@ -242,7 +255,7 @@ class PollHistoryStore:
                 "group_name": group_name,
                 "question": question,
                 "options": options,
-                "sent_at": timestamp,
+                "sent_at": normalize_epoch(timestamp),
                 "votes": {},
             }
             if simulated:
@@ -294,7 +307,7 @@ class PollHistoryStore:
                     "sender_alt": sender_alt,
                     "pushname": pushname,
                     "selected": selected,
-                    "timestamp": timestamp,
+                    "timestamp": normalize_epoch(timestamp),
                 }
                 save_poll_history(self.path, history)
                 return True
