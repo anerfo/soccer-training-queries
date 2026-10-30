@@ -409,6 +409,21 @@ def _login_error(message: str, status: int = 401) -> Response:
     return Response(page, status=status, mimetype="text/html")
 
 
+def _external_base(auth: Any) -> str:
+    """External scheme://host, using OIDC_REDIRECT_URI when available.
+
+    Flask sees the request over HTTP behind the TLS reverse proxy, so
+    ``url_for(..., _external=True)`` would wrongly produce ``http://`` URLs.
+    """
+    config = getattr(auth, "config", None)
+    redirect_uri = getattr(config, "redirect_uri", "") if config else ""
+    if redirect_uri:
+        parts = urlsplit(redirect_uri)
+        if parts.scheme and parts.netloc:
+            return f"{parts.scheme}://{parts.netloc}"
+    return request.url_root.rstrip("/")
+
+
 def _safe_next(value: str | None) -> str:
     """Only allow redirects to local paths."""
     if not value:
@@ -533,8 +548,9 @@ def create_app(
                 "OIDC_CLIENT_ID and OIDC_REDIRECT_URI",
             )
 
-        redirect_uri = auth.config.redirect_uri or url_for(
-            "auth_callback", _external=True
+        redirect_uri = (
+            auth.config.redirect_uri
+            or _external_base(auth) + url_for("auth_callback")
         )
         verifier, challenge = new_pkce_pair()
         state = secrets.token_urlsafe(32)
@@ -630,14 +646,13 @@ def create_app(
         ):
             session.pop(key, None)
         if auth is not None:
+            login_url = _external_base(auth) + url_for("login")
             target = auth.config.logout_url
             if not target:
                 try:
                     target = auth.login.logout_url(
                         id_token=id_token,
-                        post_logout_redirect_uri=url_for(
-                            "login", _external=True
-                        ),
+                        post_logout_redirect_uri=login_url,
                     )
                 except Exception:
                     target = ""
@@ -646,7 +661,7 @@ def create_app(
                 # and accept ?rd= to redirect back to the app afterwards.
                 target = (
                     f"{auth.config.issuer}/logout?rd="
-                    + quote(url_for("login", _external=True), safe="")
+                    + quote(login_url, safe="")
                 )
             if target:
                 return redirect(target)
