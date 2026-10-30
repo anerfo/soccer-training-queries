@@ -520,7 +520,12 @@ textarea.export {
 .cal-chip:hover { filter: brightness(1.2); }
 
 .cal-chip.event { background: var(--green-soft); border-color: #1d4d8f; }
-.cal-chip.send { background: var(--blue-soft); border-color: #1e40af; }
+.cal-chip.send {
+  background: #3a2a0e;
+  border-color: #d97706;
+  color: #fde68a;
+}
+.cal-chip.send .chip-kind { color: #fbbf24; }
 
 .chip-time { margin-right: 4px; font-weight: 700; }
 .chip-kind { display: block; color: var(--muted); font-size: .7rem; }
@@ -544,7 +549,7 @@ textarea.export {
 }
 
 .dot.event { background: var(--green-soft); border: 1px solid #2563eb; }
-.dot.send { background: var(--blue-soft); border: 1px solid #3b82f6; }
+.dot.send { background: #3a2a0e; border: 1px solid #f59e0b; }
 
 .detail-dialog {
   width: min(560px, calc(100% - 32px));
