@@ -5,3 +5,9 @@ data
 __pycache__
 *.py[cod]
 tests
+.env
+.env.*
+*.log
+.ruff_cache
+.pytest_cache
+.mypy_cache

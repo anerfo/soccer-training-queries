@@ -40,7 +40,7 @@ from auth import (
 from calendar_sync import (
     CalendarError,
     load_calendar_config,
-    new_id as new_calendar_id,
+    new_id,
     parse_offset,
     save_calendar_config,
 )
@@ -361,12 +361,19 @@ def create_app(
             "SESSION_COOKIE_SECURE", ""
         ).strip().lower()
         in {"1", "true", "yes", "on"},
+        MAX_CONTENT_LENGTH=2 * 1024 * 1024,
     )
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
+    @app.after_request
+    def _security_headers(response: Response) -> Response:
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        return response
+
     if auth is _AUTH_UNSET:
         auth = build_auth_from_env()
-    app.config["AUTH"] = auth
 
     @app.context_processor
     def _inject_auth() -> dict[str, Any]:
@@ -677,8 +684,7 @@ def create_app(
             index = int(index_value or "0")
         except ValueError:
             index = 0
-        if index < 0:
-            index = 0
+        index = max(index, 0)
         if polls and index >= len(polls):
             index = len(polls) - 1
         if not polls:
@@ -815,7 +821,7 @@ def create_app(
         numbers = request.form.getlist("number")
         names = request.form.getlist("name")
         if numbers or names:
-            for key, name in zip(numbers, names):
+            for key, name in zip(numbers, names, strict=False):
                 key = key.strip()
                 if key:
                     contacts[key] = name.strip()
@@ -1018,7 +1024,7 @@ def create_app(
         config = _calendar_config(_ctx())
         config["calendars"].append(
             {
-                "id": new_calendar_id(),
+                "id": new_id(),
                 "name": name,
                 "url": url,
                 "enabled": request.form.get("enabled") == "on",
@@ -1103,7 +1109,7 @@ def create_app(
         ]
         config["rules"].append(
             {
-                "id": new_calendar_id(),
+                "id": new_id(),
                 "calendar_id": calendar_id,
                 "match": match,
                 "match_type": match_type,

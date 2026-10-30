@@ -9,9 +9,10 @@ import re
 import threading
 import time
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from collections.abc import Callable
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import icalendar
 import recurring_ical_events
@@ -87,23 +88,6 @@ def save_calendar_state(path: Path, state: dict[str, Any]) -> None:
     _save_json(path, state)
 
 
-def calendar_rules_enabled(path: Path) -> bool:
-    try:
-        config = load_calendar_config(path)
-    except CalendarError:
-        return False
-    calendar_ids = {
-        calendar.get("id")
-        for calendar in config["calendars"]
-        if calendar.get("enabled", True)
-    }
-    return any(
-        rule.get("enabled", True)
-        and rule.get("calendar_id") in calendar_ids
-        for rule in config["rules"]
-    )
-
-
 def parse_offset(value: str) -> int:
     """Parse an offset like ``20h``, ``2d`` or ``90m`` into minutes."""
     match = _OFFSET_RE.match(str(value or ""))
@@ -113,13 +97,13 @@ def parse_offset(value: str) -> int:
         )
     amount = float(match.group(1).replace(",", "."))
     unit = (match.group(2) or "m").lower()
-    if unit.startswith("d") or unit.startswith("tag"):
+    if unit.startswith(("d", "tag")):
         minutes = amount * 1440
-    elif unit.startswith("h") or unit.startswith("st"):
+    elif unit.startswith(("h", "st")):
         minutes = amount * 60
     else:
         minutes = amount
-    return int(round(minutes))
+    return round(minutes)
 
 
 def match_event(rule: dict[str, Any], summary: str) -> bool:
@@ -192,10 +176,10 @@ def expand_events(
         if isinstance(value, datetime):
             start_dt = value
             if start_dt.tzinfo is None:
-                start_dt = start_dt.replace(tzinfo=timezone.utc)
+                start_dt = start_dt.replace(tzinfo=UTC)
         elif isinstance(value, date):
             start_dt = datetime(
-                value.year, value.month, value.day, tzinfo=timezone.utc
+                value.year, value.month, value.day, tzinfo=UTC
             )
         else:
             continue
@@ -368,7 +352,7 @@ class CalendarScheduler:
         if not calendars or not rules:
             return []
 
-        moment = now or datetime.now(timezone.utc)
+        moment = now or datetime.now(UTC)
         window_start = moment - timedelta(minutes=GRACE_MINUTES)
         window_end = moment + timedelta(days=LOOKAHEAD_DAYS)
         state = load_calendar_state(self.state_path)
@@ -403,7 +387,22 @@ class CalendarScheduler:
 
             due: list[tuple[dict[str, Any], dict[str, Any], str]] = []
             for rule in calendar_rules:
-                offset = parse_offset(rule.get("offset", "20h"))
+                try:
+                    offset = parse_offset(rule.get("offset", "20h"))
+                except CalendarError as exc:
+                    key = f"rule:{rule.get('id', '')}"
+                    now_ts = time.monotonic()
+                    if (
+                        now_ts - self._error_logged.get(key, 0)
+                        >= ERROR_CACHE_SECONDS
+                    ):
+                        log.warning(
+                            "skipping calendar rule %s: %s",
+                            rule.get("id"),
+                            exc,
+                        )
+                        self._error_logged[key] = now_ts
+                    continue
                 for event in events:
                     if not match_event(rule, event["summary"]):
                         continue
@@ -492,7 +491,7 @@ class CalendarScheduler:
             if calendar.get("enabled", True)
         ]
         rules = [rule for rule in config["rules"] if rule.get("enabled", True)]
-        moment = now or datetime.now(timezone.utc)
+        moment = now or datetime.now(UTC)
         window_start = moment - timedelta(minutes=GRACE_MINUTES)
         window_end = moment + timedelta(days=LOOKAHEAD_DAYS)
         polls = self._polls()
@@ -517,7 +516,13 @@ class CalendarScheduler:
                 )
                 continue
             for rule in calendar_rules:
-                offset = parse_offset(rule.get("offset", "20h"))
+                try:
+                    offset = parse_offset(rule.get("offset", "20h"))
+                except CalendarError as exc:
+                    errors.append(
+                        f"rule {rule.get('match', '')!r}: {exc}"
+                    )
+                    continue
                 for event in events:
                     if not match_event(rule, event["summary"]):
                         continue

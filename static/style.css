@@ -245,28 +245,6 @@ textarea { resize: vertical; }
 .form-grid .check { flex-direction: row; align-items: center; }
 .form-grid .check input { width: auto; }
 
-.group-field {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.group-field input { flex: 1 1 auto; }
-
-.group-status {
-  font-size: .82rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.group-status.ok { color: #4ade80; }
-.group-status.bad { color: var(--red); }
-.group-status.unknown {
-  color: var(--muted);
-  font-weight: 400;
-  white-space: normal;
-}
-
 .editor { display: grid; gap: 12px; }
 .editor textarea {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;

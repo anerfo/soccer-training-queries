@@ -106,6 +106,23 @@ class WebTests(unittest.TestCase):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, path)
 
+    def test_security_headers(self):
+        response = self.client.get("/health")
+        self.assertEqual(
+            response.headers["X-Content-Type-Options"], "nosniff"
+        )
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(
+            response.headers["Referrer-Policy"], "same-origin"
+        )
+
+    def test_oversized_requests_are_rejected(self):
+        response = self.client.post(
+            "/polls",
+            data={"polls": "x" * (2 * 1024 * 1024 + 1)},
+        )
+        self.assertEqual(response.status_code, 413)
+
     def _write_history(self):
         store = wa.PollHistoryStore(self.poll_history_path)
         store.record_sent_poll(

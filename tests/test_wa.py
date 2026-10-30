@@ -14,7 +14,6 @@ from wa import (
     parse_polls,
 )
 
-
 GROUPS = [
     {"name": "Soccer Mates", "jid": "111-222@g.us"},
     {"name": "Soccer Mates Old", "jid": "333-444@g.us"},

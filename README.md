@@ -1,4 +1,4 @@
-# whatsapp-agent
+# soccer-training-queries
 
 A small Python daemon and CLI for sending messages to a WhatsApp group (for
 example, a soccer group). It uses [neonize](https://github.com/krypton-byte/neonize)
@@ -225,7 +225,7 @@ Set defaults with environment variables:
 
 ```bash
 export WA_GROUP="Soccer Mates"
-export WA_SOCKET="/home/andi/code/whatsapp-agent/data/wa.sock"
+export WA_SOCKET="/opt/docker/soccer-training-queries/data/wa.sock"
 ```
 
 ## Recurring training questionnaire
@@ -278,16 +278,16 @@ the `send` or `poll-next` command, and the daemon must already be running.
 
 ```cron
 # Every Saturday at 10:00, remind the group about the match.
-0 10 * * 6 cd /home/andi/code/whatsapp-agent && .venv/bin/python wa.py send --group "Soccer Mates" --text "Match today at 7pm!" >> data/send.log 2>&1
+0 10 * * 6 cd /opt/docker/soccer-training-queries && .venv/bin/python wa.py send --group "Soccer Mates" --text "Match today at 7pm!" >> data/send.log 2>&1
 
 # Every Thursday at 18:00, send the next training poll.
-0 18 * * 4 cd /home/andi/code/whatsapp-agent && .venv/bin/python wa.py poll-next --group "Soccer Mates" >> data/send.log 2>&1
+0 18 * * 4 cd /opt/docker/soccer-training-queries && .venv/bin/python wa.py poll-next --group "Soccer Mates" >> data/send.log 2>&1
 ```
 
 With Docker, use `exec -T` (no TTY) for the same command:
 
 ```cron
-0 18 * * 4 cd /home/andi/code/whatsapp-agent && docker compose exec -T wa python wa.py poll-next --group "Soccer Mates" >> data/send.log 2>&1
+0 18 * * 4 cd /opt/docker/soccer-training-queries && docker compose exec -T wa python wa.py poll-next --group "Soccer Mates" >> data/send.log 2>&1
 ```
 
 If the daemon is down or disconnected, the command exits non-zero and writes
@@ -304,6 +304,17 @@ Stop the daemon with `Ctrl+C` (foreground) or:
 ```bash
 pkill -f 'wa.py serve'
 ```
+
+## Development
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python -m unittest discover -s tests
+uvx ruff check . --exclude .venv --exclude data
+```
+
+Ruff configuration lives in `ruff.toml`.
 
 ## Troubleshooting
 

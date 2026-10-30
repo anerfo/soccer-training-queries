@@ -21,8 +21,9 @@ import os
 import secrets
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 from urllib.parse import urlencode
 
 import jwt
@@ -60,7 +61,7 @@ class OIDCConfig:
     logout_url: str = ""
 
     @classmethod
-    def from_env(cls) -> "OIDCConfig":
+    def from_env(cls) -> OIDCConfig:
         issuer = os.environ.get("OIDC_ISSUER", "").strip().rstrip("/")
         client_id = os.environ.get("OIDC_CLIENT_ID", "").strip()
         audience = (

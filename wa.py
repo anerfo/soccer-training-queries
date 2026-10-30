@@ -475,8 +475,8 @@ class WhatsAppService:
     def start(self) -> None:
         from neonize.client import NewClient
         from neonize.events import (
-            ConnectFailureEv,
             ConnectedEv,
+            ConnectFailureEv,
             DisconnectedEv,
             LoggedOutEv,
             MessageEv,
@@ -520,7 +520,7 @@ class WhatsAppService:
             log.warning("%s", self.failure)
 
         @self.client.event(TemporaryBanEv)
-        def _on_temporary_ban(_client: Any, _event: Any) -> None:
+        def _on_temporary_ban(_client: Any, event: Any) -> None:
             self.connected.clear()
             self._fail(
                 f"temporary ban (reason={event.Code}, expires={event.Expire})"
@@ -745,6 +745,7 @@ class WhatsAppService:
             try:
                 jid = Jid2String(contact.JID)
             except Exception:
+                log.debug("could not decode contact JID", exc_info=True)
                 continue
             number = jid.split("@", 1)[0].split(":", 1)[0]
             info = contact.Info
@@ -976,9 +977,9 @@ class _RequestHandler(socketserver.StreamRequestHandler):
                 except json.JSONDecodeError as exc:
                     response = _error(f"invalid JSON: {exc}")
                 else:
-                    service = getattr(self.server, "service")
+                    service = self.server.service
                     response = service.dispatch(request)
-        except (TimeoutError, socket.timeout):
+        except TimeoutError:
             response = _error("request timed out")
         except Exception as exc:
             log.exception("socket request failed")

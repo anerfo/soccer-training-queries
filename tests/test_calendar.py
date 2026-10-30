@@ -2,7 +2,7 @@ import json
 import tempfile
 import threading
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
@@ -26,7 +26,7 @@ END:VCALENDAR
 
 
 def utc(*args):
-    return datetime(*args, tzinfo=timezone.utc)
+    return datetime(*args, tzinfo=UTC)
 
 
 class FakeService:
@@ -232,6 +232,21 @@ class SchedulerTests(unittest.TestCase):
             self.service.texts, [("Gruppe", "Bitte abstimmen")]
         )
 
+    def test_invalid_offset_is_skipped(self):
+        config = calendar_sync.load_calendar_config(self.config_path)
+        config["rules"][0]["offset"] = "später"
+        self.config_path.write_text(json.dumps(config), encoding="utf-8")
+        self.scheduler.tick(now=utc(2026, 10, 6, 23))
+        self.assertEqual(self.service.polls, [])
+
+    def test_preview_reports_invalid_offset(self):
+        config = calendar_sync.load_calendar_config(self.config_path)
+        config["rules"][0]["offset"] = "später"
+        self.config_path.write_text(json.dumps(config), encoding="utf-8")
+        items, error = self.scheduler.preview(now=utc(2026, 10, 6, 12))
+        self.assertEqual(items, [])
+        self.assertIn("offset", error)
+
     def test_preview_shows_upcoming_sends(self):
         items, error = self.scheduler.preview(now=utc(2026, 10, 6, 12))
         self.assertIsNone(error)
@@ -240,37 +255,6 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(items[0]["content"], "Erste?")
         self.assertEqual(items[0]["send_at"], utc(2026, 10, 6, 23))
         self.assertEqual(items[1]["content"], "Zweite?")
-
-
-class RulesEnabledTests(unittest.TestCase):
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.path = Path(self.temp.name) / "calendars.json"
-
-    def tearDown(self):
-        self.temp.cleanup()
-
-    def test_rules_enabled(self):
-        self.path.write_text(
-            json.dumps(
-                {
-                    "calendars": [{"id": "c", "enabled": True}],
-                    "rules": [{"id": "r", "calendar_id": "c", "enabled": True}],
-                }
-            )
-        )
-        self.assertTrue(calendar_sync.calendar_rules_enabled(self.path))
-
-    def test_no_rules(self):
-        self.path.write_text(
-            json.dumps(
-                {
-                    "calendars": [{"id": "c", "enabled": True}],
-                    "rules": [{"id": "r", "calendar_id": "c", "enabled": False}],
-                }
-            )
-        )
-        self.assertFalse(calendar_sync.calendar_rules_enabled(self.path))
 
 
 if __name__ == "__main__":
