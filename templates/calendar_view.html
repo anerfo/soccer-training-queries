@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Kalenderansicht · FVF AH{% endblock %}
+{% block content %}
+<div class="panel-head">
+  <h1>Kalenderansicht</h1>
+  <a class="button secondary" href="{{ url_for('calendar_page') }}">Kalender verwalten</a>
+</div>
+
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+<section class="panel">
+  <div class="calendar-head">
+    <a class="button secondary" href="{{ url_for('calendar_view_page', month=prev_month) }}">←</a>
+    <h2>{{ month_label }} {{ year }}</h2>
+    <a class="button secondary" href="{{ url_for('calendar_view_page', month=next_month) }}">→</a>
+  </div>
+  <p class="muted small">
+    {{ calendar_count }} Kalender · {{ rule_count }} Regeln ·
+    Klick auf einen Eintrag zeigt die Details.
+  </p>
+
+  <div class="table-wrap">
+    <table class="month-grid">
+      <thead>
+        <tr>
+          {% for weekday in ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"] %}
+            <th>{{ weekday }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for week in weeks %}
+          <tr>
+            {% for day in week %}
+              <td class="{% if not day.in_month %}other-month{% endif %} {% if day.today %}today{% endif %}">
+                <span class="day-number">{{ day.date.day }}</span>
+
+                {% for event in day.events %}
+                  <button
+                    type="button"
+                    class="cal-chip event"
+                    data-detail="{{ {
+                      'Art': 'Termin',
+                      'Titel': event.summary,
+                      'Kalender': event.calendar,
+                      'Beginn': 'ganztägig' if event.all_day else event.start.strftime('%d.%m.%Y %H:%M'),
+                      'Ende': event.end.strftime('%d.%m.%Y %H:%M') if event.end else '',
+                      'Ort': event.location,
+                      'Beschreibung': event.description,
+                      'Regeln': event.rules | join(', '),
+                    } | tojson | forceescape }}"
+                  >
+                    <span class="chip-time">
+                      {% if event.all_day %}ganztägig{% else %}{{ event.start.strftime('%H:%M') }}{% endif %}
+                    </span>
+                    <span class="chip-title">{{ event.summary }}</span>
+                  </button>
+                {% endfor %}
+
+                {% for send in day.sends %}
+                  <button
+                    type="button"
+                    class="cal-chip send"
+                    data-detail="{{ {
+                      'Art': 'Geplante Nachricht',
+                      'Typ': 'Umfrage' if send.kind == 'poll' else 'Text',
+                      'Senden am': send.send_at.strftime('%d.%m.%Y %H:%M'),
+                      'Termin': send.summary,
+                      'Terminbeginn': send.event_start.strftime('%d.%m.%Y %H:%M'),
+                      'Kalender': send.calendar,
+                      'Gruppe': send.group,
+                      'Regel': send.rule_match,
+                      'Inhalt': send.content,
+                      'Status': 'gesendet' if send.sent else 'geplant',
+                    } | tojson | forceescape }}"
+                  >
+                    <span class="chip-time">{{ send.send_at.strftime('%H:%M') }}</span>
+                    <span class="chip-title">→ {{ send.group }}</span>
+                    {% if send.kind == 'poll' %}<span class="chip-kind">Umfrage</span>{% endif %}
+                  </button>
+                {% endfor %}
+              </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="legend">
+    <span><i class="dot event"></i> Termin</span>
+    <span><i class="dot send"></i> Geplante Nachricht</span>
+  </div>
+</section>
+
+<dialog id="detail-dialog" class="detail-dialog">
+  <div class="detail-head">
+    <h2 id="detail-title">Details</h2>
+    <form method="dialog">
+      <button class="detail-close" aria-label="Schließen">×</button>
+    </form>
+  </div>
+  <dl id="detail-list"></dl>
+</dialog>
+
+<script>
+(function () {
+  var dialog = document.getElementById("detail-dialog");
+  var title = document.getElementById("detail-title");
+  var list = document.getElementById("detail-list");
+  if (!dialog || !title || !list) return;
+
+  document.addEventListener("click", function (event) {
+    var chip = event.target.closest("[data-detail]");
+    if (!chip) return;
+    var data;
+    try {
+      data = JSON.parse(chip.getAttribute("data-detail"));
+    } catch (err) {
+      return;
+    }
+    title.textContent = data["Art"] || "Details";
+    list.textContent = "";
+    Object.keys(data).forEach(function (key) {
+      var value = data[key];
+      if (value === null || value === undefined || value === "") return;
+      var term = document.createElement("dt");
+      term.textContent = key;
+      var definition = document.createElement("dd");
+      definition.textContent = value;
+      list.appendChild(term);
+      list.appendChild(definition);
+    });
+    dialog.showModal();
+  });
+
+  dialog.addEventListener("click", function (event) {
+    if (event.target === dialog) dialog.close();
+  });
+})();
+</script>
+{% endblock %}

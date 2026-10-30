@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar as calendar_module
 import hashlib
 import logging
 import os
@@ -10,7 +11,7 @@ import secrets
 import threading
 import time
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from urllib.parse import quote, urlsplit
 
@@ -43,6 +44,21 @@ from calendar_sync import (
     new_id,
     parse_offset,
     save_calendar_config,
+)
+
+MONTHS_DE = (
+    "Januar",
+    "Februar",
+    "März",
+    "April",
+    "Mai",
+    "Juni",
+    "Juli",
+    "August",
+    "September",
+    "Oktober",
+    "November",
+    "Dezember",
 )
 
 log = logging.getLogger("wa.web")
@@ -140,6 +156,28 @@ def _default_group(ctx: dict[str, Any]) -> str:
         if rule.get("enabled", True) and rule.get("group"):
             return str(rule["group"]).strip()
     return ""
+
+
+def _month_param(value: str | None) -> tuple[int, int, str]:
+    if value:
+        try:
+            parsed = datetime.strptime(value, "%Y-%m")
+            return (
+                parsed.year,
+                parsed.month,
+                f"{parsed.year:04d}-{parsed.month:02d}",
+            )
+        except ValueError:
+            pass
+    today = date.today()
+    return today.year, today.month, f"{today.year:04d}-{today.month:02d}"
+
+
+def _shift_month(year: int, month: int, delta: int) -> tuple[int, int, str]:
+    index = year * 12 + (month - 1) + delta
+    new_year, new_month = divmod(index, 12)
+    new_month += 1
+    return new_year, new_month, f"{new_year:04d}-{new_month:02d}"
 
 
 def _jid_number(jid: str) -> str:
@@ -997,6 +1035,74 @@ def create_app(
             polls_error=polls_error,
             preview=preview,
             preview_error=preview_error,
+        )
+
+    @app.get("/calendar/view")
+    def calendar_view_page() -> str:
+        ctx = _ctx()
+        year, month, month_value = _month_param(request.args.get("month"))
+        scheduler = ctx.get("calendar_scheduler")
+        data: dict[str, Any] = {"events": [], "sends": []}
+        error = None
+        if scheduler is not None:
+            try:
+                data, error = scheduler.month_entries(
+                    year,
+                    month,
+                    os.environ.get(
+                        "CALENDAR_TIMEZONE", "Europe/Berlin"
+                    ),
+                )
+            except Exception as exc:
+                log.exception("calendar view failed")
+                error = str(exc)
+
+        events_by_day: dict[str, list[dict[str, Any]]] = {}
+        sends_by_day: dict[str, list[dict[str, Any]]] = {}
+        for event in data["events"]:
+            events_by_day.setdefault(
+                event["start"].date().isoformat(), []
+            ).append(event)
+        for send in data["sends"]:
+            sends_by_day.setdefault(
+                send["send_at"].date().isoformat(), []
+            ).append(send)
+
+        today = date.today()
+        weeks = []
+        for week in calendar_module.Calendar(
+            firstweekday=0
+        ).monthdatescalendar(year, month):
+            days = []
+            for day in week:
+                iso = day.isoformat()
+                days.append(
+                    {
+                        "date": day,
+                        "in_month": day.month == month,
+                        "today": day == today,
+                        "events": events_by_day.get(iso, []),
+                        "sends": sends_by_day.get(iso, []),
+                    }
+                )
+            weeks.append(days)
+
+        _prev_year, _prev_month, prev_value = _shift_month(year, month, -1)
+        _next_year, _next_month, next_value = _shift_month(year, month, 1)
+        config = _calendar_config(ctx)
+        return render_template(
+            "calendar_view.html",
+            active="calendar",
+            weeks=weeks,
+            year=year,
+            month=month,
+            month_label=MONTHS_DE[month - 1],
+            month_param=month_value,
+            prev_month=prev_value,
+            next_month=next_value,
+            error=error,
+            calendar_count=len(config["calendars"]),
+            rule_count=len(config["rules"]),
         )
 
     def _save_calendar(config: dict[str, Any]) -> bool:

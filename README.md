@@ -96,8 +96,11 @@ Recurring events are expanded with their `RRULE`; deleting a single occurrence
 in Google Calendar (or marking it cancelled) removes it from the feed, so no
 message is sent for it. The feed is re-fetched right before sending to honour
 last-minute deletions. The **Vorschau** table shows the upcoming sends and the
-poll rotation. Calendar configuration lives in `data/calendars.json`, send
-state in `data/calendar_state.json`.
+poll rotation. The **Kalenderansicht** (`/calendar/view`) renders a monthly
+grid with calendar events and planned/sent messages; clicking an entry
+opens a detail dialog. Calendar configuration lives in
+`data/calendars.json`, send state (including sent-message history) in
+`data/calendar_state.json`.
 
 ### Poll results
 

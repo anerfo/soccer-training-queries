@@ -232,6 +232,41 @@ class SchedulerTests(unittest.TestCase):
             self.service.texts, [("Gruppe", "Bitte abstimmen")]
         )
 
+    def test_month_entries_show_events_and_sends(self):
+        data, error = self.scheduler.month_entries(
+            2026, 11, "UTC", now=utc(2026, 10, 1)
+        )
+        self.assertIsNone(error)
+        self.assertEqual(
+            [event["summary"] for event in data["events"]],
+            ["AH-Training", "AH-Training"],
+        )
+        self.assertEqual(
+            [event["start"].date().isoformat() for event in data["events"]],
+            ["2026-11-04", "2026-11-11"],
+        )
+        self.assertEqual(len(data["sends"]), 2)
+        self.assertEqual(
+            [send["content"] for send in data["sends"]],
+            ["Erste?", "Zweite?"],
+        )
+        self.assertEqual(
+            data["sends"][0]["send_at"].date().isoformat(), "2026-11-03"
+        )
+
+    def test_month_entries_use_history_for_sent_messages(self):
+        self.scheduler.tick(now=utc(2026, 11, 3, 23))
+        data, error = self.scheduler.month_entries(
+            2026, 11, "UTC", now=utc(2026, 11, 4)
+        )
+        self.assertIsNone(error)
+        sent = [send for send in data["sends"] if send["sent"]]
+        upcoming = [send for send in data["sends"] if not send["sent"]]
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0]["content"], "Erste?")
+        self.assertEqual(len(upcoming), 1)
+        self.assertEqual(upcoming[0]["content"], "Zweite?")
+
     def test_invalid_offset_is_skipped(self):
         config = calendar_sync.load_calendar_config(self.config_path)
         config["rules"][0]["offset"] = "später"

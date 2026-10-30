@@ -13,6 +13,7 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import icalendar
 import recurring_ical_events
@@ -25,6 +26,7 @@ ERROR_CACHE_SECONDS = 300
 LOOKAHEAD_DAYS = 35
 GRACE_MINUTES = 60
 STATE_RETENTION_DAYS = 90
+DEFAULT_CALENDAR_TIMEZONE = "Europe/Berlin"
 
 _OFFSET_RE = re.compile(
     r"^\s*(\d+(?:[.,]\d+)?)\s*"
@@ -81,6 +83,8 @@ def load_calendar_state(path: Path) -> dict[str, Any]:
         data["sent"] = {}
     if not isinstance(data.get("rotations"), dict):
         data["rotations"] = {}
+    if not isinstance(data.get("history"), dict):
+        data["history"] = {}
     return data
 
 
@@ -164,6 +168,13 @@ def expand_events(
     except Exception as exc:
         raise CalendarError(f"cannot expand calendar: {exc}") from exc
 
+    def as_datetime(value: Any) -> datetime | None:
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=UTC)
+        if isinstance(value, date):
+            return datetime(value.year, value.month, value.day, tzinfo=UTC)
+        return None
+
     events: list[dict[str, Any]] = []
     for event in occurrences:
         status = str(event.get("STATUS", "")).strip().upper()
@@ -172,17 +183,11 @@ def expand_events(
         dtstart = event.get("DTSTART")
         if dtstart is None:
             continue
-        value = dtstart.dt
-        if isinstance(value, datetime):
-            start_dt = value
-            if start_dt.tzinfo is None:
-                start_dt = start_dt.replace(tzinfo=UTC)
-        elif isinstance(value, date):
-            start_dt = datetime(
-                value.year, value.month, value.day, tzinfo=UTC
-            )
-        else:
+        start_dt = as_datetime(dtstart.dt)
+        if start_dt is None:
             continue
+        dtend = event.get("DTEND")
+        end_dt = as_datetime(dtend.dt) if dtend is not None else None
         recurrence_id = event.get("RECURRENCE-ID")
         events.append(
             {
@@ -194,6 +199,10 @@ def expand_events(
                 ),
                 "summary": str(event.get("SUMMARY", "")).strip(),
                 "start": start_dt,
+                "end": end_dt,
+                "all_day": not isinstance(dtstart.dt, datetime),
+                "location": str(event.get("LOCATION", "")).strip(),
+                "description": str(event.get("DESCRIPTION", "")).strip(),
             }
         )
     events.sort(key=lambda item: item["start"])
@@ -312,7 +321,7 @@ class CalendarScheduler:
 
     def _send(
         self, rule: dict[str, Any], event: dict[str, Any], state: dict[str, Any]
-    ) -> None:
+    ) -> dict[str, Any]:
         group = str(rule.get("group", "")).strip()
         if not group:
             raise CalendarError("rule has no group")
@@ -321,7 +330,7 @@ class CalendarScheduler:
             if not text:
                 raise CalendarError("text rule has no text")
             self.service.send(group, text)
-            return
+            return {"kind": "text", "content": text, "group": group}
 
         polls = self._polls()
         by_question = {poll["question"]: poll for poll in polls}
@@ -339,6 +348,12 @@ class CalendarScheduler:
         poll = by_question[question]
         self.service.poll(group, poll["question"], poll["options"])
         state["rotations"][rule.get("id", "")] = (index + 1) % len(rotation)
+        return {
+            "kind": "poll",
+            "content": question,
+            "group": group,
+            "question": question,
+        }
 
     def tick(self, now: datetime | None = None) -> list[dict[str, Any]]:
         """Process due events once. Returns the sent entries (for tests)."""
@@ -451,13 +466,17 @@ class CalendarScheduler:
                     )
                     continue
                 try:
-                    self._send(rule, fresh_keys[key], state)
+                    info = self._send(rule, fresh_keys[key], state)
                 except Exception:
                     log.exception(
                         "calendar send failed for %r", event["summary"]
                     )
                     continue
                 state["sent"][key] = int(moment.timestamp())
+                state.setdefault("history", {})[key] = {
+                    "sent_at": int(moment.timestamp()),
+                    **info,
+                }
                 changed = True
                 sent_now.append(
                     {
@@ -479,6 +498,14 @@ class CalendarScheduler:
             for key, value in state["sent"].items()
             if isinstance(value, (int, float)) and value >= cutoff
         }
+        history = state.get("history")
+        if isinstance(history, dict):
+            state["history"] = {
+                key: value
+                for key, value in history.items()
+                if isinstance(value.get("sent_at"), (int, float))
+                and value["sent_at"] >= cutoff
+            }
 
     def preview(
         self, now: datetime | None = None, limit: int = 12
@@ -560,3 +587,157 @@ class CalendarScheduler:
         items.sort(key=lambda item: item["send_at"])
         error = "; ".join(errors) if errors else None
         return items[:limit], error
+
+    def month_entries(
+        self,
+        year: int,
+        month: int,
+        timezone_name: str = DEFAULT_CALENDAR_TIMEZONE,
+        now: datetime | None = None,
+    ) -> tuple[dict[str, Any], str | None]:
+        """Return calendar events and planned/sent messages for a month."""
+        tz = ZoneInfo(timezone_name)
+        start_local = datetime(year, month, 1, tzinfo=tz)
+        if month == 12:
+            next_local = datetime(year + 1, 1, 1, tzinfo=tz)
+        else:
+            next_local = datetime(year, month + 1, 1, tzinfo=tz)
+
+        config = load_calendar_config(self.config_path)
+        calendars = [
+            calendar
+            for calendar in config["calendars"]
+            if calendar.get("enabled", True)
+        ]
+        rules = [rule for rule in config["rules"] if rule.get("enabled", True)]
+        state = load_calendar_state(self.state_path)
+        history = state.get("history", {})
+        sent_keys = state.get("sent", {})
+        rotations = dict(state.get("rotations", {}))
+        polls = self._polls()
+        by_question = {poll["question"]: poll for poll in polls}
+        moment = now or datetime.now(UTC)
+
+        max_offset = 0
+        for rule in rules:
+            try:
+                max_offset = max(
+                    max_offset, parse_offset(rule.get("offset", "20h"))
+                )
+            except CalendarError:
+                continue
+
+        window_start = start_local - timedelta(days=2)
+        window_end = next_local + timedelta(minutes=max_offset + 1440)
+
+        events_out: list[dict[str, Any]] = []
+        sends_out: list[dict[str, Any]] = []
+        errors: list[str] = []
+
+        for calendar in calendars:
+            calendar_rules = [
+                rule
+                for rule in rules
+                if rule.get("calendar_id") == calendar.get("id")
+            ]
+            if not calendar_rules:
+                continue
+            try:
+                events = self._events(calendar, window_start, window_end)
+            except Exception as exc:
+                errors.append(
+                    f"{calendar.get('name') or 'calendar'}: {exc}"
+                )
+                continue
+
+            rule_items: dict[str, list[dict[str, Any]]] = {}
+            for event in events:
+                event_start = event["start"].astimezone(tz)
+                event_end = (
+                    event["end"].astimezone(tz)
+                    if event.get("end")
+                    else None
+                )
+                matching_rules = [
+                    rule
+                    for rule in calendar_rules
+                    if match_event(rule, event["summary"])
+                ]
+                if start_local <= event_start < next_local:
+                    events_out.append(
+                        {
+                            "calendar": calendar.get("name", ""),
+                            "summary": event["summary"],
+                            "start": event_start,
+                            "end": event_end,
+                            "all_day": event.get("all_day", False),
+                            "location": event.get("location", ""),
+                            "description": event.get("description", ""),
+                            "uid": event["uid"],
+                            "recurrence_id": event["recurrence_id"],
+                            "rules": [
+                                rule.get("match", "")
+                                for rule in matching_rules
+                            ],
+                        }
+                    )
+                for rule in matching_rules:
+                    try:
+                        offset = parse_offset(rule.get("offset", "20h"))
+                    except CalendarError:
+                        continue
+                    send_at = event_start - timedelta(minutes=offset)
+                    if not (start_local <= send_at < next_local):
+                        continue
+                    key = _occurrence_key(rule, event)
+                    item = {
+                        "send_at": send_at,
+                        "event_start": event_start,
+                        "summary": event["summary"],
+                        "calendar": calendar.get("name", ""),
+                        "group": rule.get("group", ""),
+                        "kind": rule.get("kind", "poll"),
+                        "content": "",
+                        "rule_match": rule.get("match", ""),
+                        "key": key,
+                        "uid": event["uid"],
+                        "recurrence_id": event["recurrence_id"],
+                        "sent": False,
+                    }
+                    rule_items.setdefault(rule.get("id", ""), []).append(
+                        (item, rule)
+                    )
+
+            for rule_id, entries in rule_items.items():
+                rule = entries[0][1]
+                rotation = [
+                    question
+                    for question in (rule.get("poll_questions") or [])
+                    if question in by_question
+                ]
+                if not rotation:
+                    rotation = [poll["question"] for poll in polls]
+                for item, _rule in sorted(
+                    entries, key=lambda pair: pair[0]["send_at"]
+                ):
+                    key = item["key"]
+                    if key in history:
+                        stored = history[key]
+                        item["kind"] = stored.get("kind", item["kind"])
+                        item["content"] = stored.get("content", "")
+                        item["group"] = stored.get("group", item["group"])
+                        item["sent"] = True
+                    elif item["send_at"] >= moment and rotation:
+                        index = int(rotations.get(rule_id, 0))
+                        item["content"] = rotation[index % len(rotation)]
+                        rotations[rule_id] = index + 1
+                    else:
+                        item["sent"] = key in sent_keys
+                    sends_out.append(item)
+
+        events_out.sort(key=lambda item: item["start"])
+        sends_out.sort(key=lambda item: item["send_at"])
+        return (
+            {"events": events_out, "sends": sends_out},
+            "; ".join(errors) if errors else None,
+        )

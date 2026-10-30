@@ -13,6 +13,11 @@ class FakeCalendarScheduler:
     def preview(self, now=None, limit=12):
         return [], None
 
+    def month_entries(
+        self, year, month, timezone_name="Europe/Berlin", now=None
+    ):
+        return {"events": [], "sends": []}, None
+
 
 class FakeService:
     def __init__(self, connected=True):
@@ -101,10 +106,68 @@ class WebTests(unittest.TestCase):
             "/votes",
             "/contacts",
             "/calendar",
+            "/calendar/view",
             "/api/status",
         ):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, path)
+
+    def test_calendar_view_shows_entries(self):
+        from datetime import UTC, datetime
+
+        class Scheduler:
+            def preview(self, now=None, limit=12):
+                return [], None
+
+            def month_entries(
+                self, year, month, timezone_name="Europe/Berlin", now=None
+            ):
+                return {
+                    "events": [
+                        {
+                            "calendar": "Test",
+                            "summary": "Training",
+                            "start": datetime(2026, 11, 4, 19, tzinfo=UTC),
+                            "end": datetime(2026, 11, 4, 20, 30, tzinfo=UTC),
+                            "all_day": False,
+                            "location": "Platz",
+                            "description": "Beschreibung",
+                            "uid": "u1",
+                            "recurrence_id": "",
+                            "rules": ["Training"],
+                        }
+                    ],
+                    "sends": [
+                        {
+                            "send_at": datetime(2026, 11, 3, 23, tzinfo=UTC),
+                            "event_start": datetime(
+                                2026, 11, 4, 19, tzinfo=UTC
+                            ),
+                            "summary": "Training",
+                            "calendar": "Test",
+                            "group": "Gruppe",
+                            "kind": "poll",
+                            "content": "Dabei?",
+                            "rule_match": "Training",
+                            "key": "k",
+                            "uid": "u1",
+                            "recurrence_id": "",
+                            "sent": False,
+                        }
+                    ],
+                }, None
+
+        ctx = dict(self.ctx)
+        ctx["calendar_scheduler"] = Scheduler()
+        client = create_app(self.service, ctx).test_client()
+        html = client.get(
+            "/calendar/view?month=2026-11"
+        ).get_data(as_text=True)
+        self.assertIn("Kalenderansicht", html)
+        self.assertIn("Training", html)
+        self.assertIn("Dabei?", html)
+        self.assertIn("data-detail", html)
+        self.assertIn('id="detail-dialog"', html)
 
     def test_security_headers(self):
         response = self.client.get("/health")
