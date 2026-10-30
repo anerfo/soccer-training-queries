@@ -20,10 +20,8 @@ import socketserver
 import sys
 import threading
 import time
-from datetime import date, datetime, time as dt_time, timedelta
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DATA_DIR = BASE_DIR / "data"
@@ -32,8 +30,6 @@ DEFAULT_DB = DEFAULT_DATA_DIR / "wa_session.db"
 DEFAULT_QR = DEFAULT_DATA_DIR / "qr.png"
 DEFAULT_POLLS_FILE = BASE_DIR / "polls.txt"
 DEFAULT_POLL_STATE = DEFAULT_DATA_DIR / "polls_state.json"
-DEFAULT_SCHEDULE_FILE = DEFAULT_DATA_DIR / "schedule.json"
-DEFAULT_SCHEDULE_STATE = DEFAULT_DATA_DIR / "schedule_state.json"
 DEFAULT_POLL_HISTORY = DEFAULT_DATA_DIR / "poll_history.json"
 DEFAULT_CONTACTS = DEFAULT_DATA_DIR / "contacts.json"
 DEFAULT_CALENDARS = DEFAULT_DATA_DIR / "calendars.json"
@@ -41,18 +37,6 @@ DEFAULT_CALENDAR_STATE = DEFAULT_DATA_DIR / "calendar_state.json"
 POLL_HISTORY_LIMIT = 50
 GROUPS_CACHE_SECONDS = 10
 
-WEEKDAYS_DE = (
-    "Montag",
-    "Dienstag",
-    "Mittwoch",
-    "Donnerstag",
-    "Freitag",
-    "Samstag",
-    "Sonntag",
-)
-DEFAULT_TIMEZONE = "Europe/Berlin"
-SCHEDULE_GRACE = timedelta(minutes=30)
-SCHEDULER_INTERVAL = 20.0
 
 CONNECT_WAIT = 30.0
 MAX_REQUEST = 64 * 1024
@@ -341,166 +325,6 @@ class PollHistoryStore:
             return False
 
 
-def load_schedule_state(path: Path) -> dict[str, Any]:
-    return _load_json_object(path)
-
-
-def save_schedule_state(path: Path, state: dict[str, Any]) -> None:
-    _save_json_object(path, state)
-
-
-def default_schedule() -> dict[str, Any]:
-    return {
-        "enabled": False,
-        "weekday": 2,
-        "time": "18:00",
-        "timezone": DEFAULT_TIMEZONE,
-        "group": os.environ.get("WA_GROUP", ""),
-        "skip_dates": [],
-        "extra_dates": [],
-    }
-
-
-def _normalize_date_list(value: Any, field: str) -> list[str]:
-    if isinstance(value, str):
-        items: list[Any] = value.replace(",", " ").split()
-    elif isinstance(value, (list, tuple)):
-        items = list(value)
-    else:
-        raise ValueError(f"{field} must be a list of dates")
-
-    dates: set[str] = set()
-    for item in items:
-        text = str(item).strip()
-        if not text:
-            continue
-        try:
-            parsed = date.fromisoformat(text)
-        except ValueError as exc:
-            raise ValueError(f"invalid date in {field}: {text}") from exc
-        dates.add(parsed.isoformat())
-    return sorted(dates)
-
-
-def normalize_schedule(data: Any) -> dict[str, Any]:
-    if not isinstance(data, dict):
-        raise ValueError("schedule must be a JSON object")
-
-    try:
-        weekday = int(data.get("weekday", 2))
-    except (TypeError, ValueError) as exc:
-        raise ValueError("weekday must be a number from 0 to 6") from exc
-    if not 0 <= weekday <= 6:
-        raise ValueError("weekday must be a number from 0 to 6")
-
-    time_text = str(data.get("time", "18:00")).strip()
-    try:
-        parsed_time = datetime.strptime(time_text, "%H:%M").time()
-    except ValueError as exc:
-        raise ValueError("time must use the HH:MM format") from exc
-
-    timezone_name = str(data.get("timezone", DEFAULT_TIMEZONE)).strip()
-    if not timezone_name:
-        timezone_name = DEFAULT_TIMEZONE
-    try:
-        ZoneInfo(timezone_name)
-    except (ZoneInfoNotFoundError, ValueError) as exc:
-        raise ValueError(f"unknown timezone: {timezone_name}") from exc
-
-    enabled_value = data.get("enabled", False)
-    if isinstance(enabled_value, str):
-        enabled = enabled_value.strip().lower() in ("1", "true", "yes", "on")
-    else:
-        enabled = bool(enabled_value)
-
-    return {
-        "enabled": enabled,
-        "weekday": weekday,
-        "time": parsed_time.strftime("%H:%M"),
-        "timezone": timezone_name,
-        "group": str(data.get("group", "")).strip(),
-        "skip_dates": _normalize_date_list(
-            data.get("skip_dates", []), "skip_dates"
-        ),
-        "extra_dates": _normalize_date_list(
-            data.get("extra_dates", []), "extra_dates"
-        ),
-    }
-
-
-def load_schedule(path: Path) -> dict[str, Any]:
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return default_schedule()
-    except OSError as exc:
-        raise ValueError(f"cannot read schedule {path}: {exc}") from exc
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"invalid schedule file {path}: {exc}") from exc
-    return normalize_schedule(data)
-
-
-def save_schedule(path: Path, schedule: dict[str, Any]) -> None:
-    _save_json_object(path, normalize_schedule(schedule))
-
-
-def schedule_slots(
-    schedule: dict[str, Any], start: date, end: date
-) -> list[datetime]:
-    """Return scheduled datetimes between two dates, inclusive."""
-    timezone = ZoneInfo(schedule["timezone"])
-    hour, minute = (int(part) for part in schedule["time"].split(":"))
-    skip = set(schedule["skip_dates"])
-    extra = set(schedule["extra_dates"])
-
-    slots: list[datetime] = []
-    day = start
-    while day <= end:
-        iso = day.isoformat()
-        if iso not in skip and (
-            day.weekday() == schedule["weekday"] or iso in extra
-        ):
-            slots.append(
-                datetime.combine(
-                    day, dt_time(hour, minute), tzinfo=timezone
-                )
-            )
-        day += timedelta(days=1)
-    return slots
-
-
-def next_schedule_slots(
-    schedule: dict[str, Any], now: datetime, count: int = 5
-) -> list[datetime]:
-    slots: list[datetime] = []
-    day = now.date()
-    last_day = day + timedelta(days=366)
-    while day <= last_day and len(slots) < count:
-        for slot in schedule_slots(schedule, day, day):
-            if slot >= now:
-                slots.append(slot)
-                if len(slots) >= count:
-                    break
-        day += timedelta(days=1)
-    return slots
-
-
-def due_schedule_slot(
-    schedule: dict[str, Any],
-    now: datetime,
-    grace: timedelta = SCHEDULE_GRACE,
-) -> datetime | None:
-    """Return a scheduled slot that is due now and still inside the grace period."""
-    for days_back in range(0, 8):
-        day = now.date() - timedelta(days=days_back)
-        for slot in schedule_slots(schedule, day, day):
-            if slot <= now <= slot + grace:
-                return slot
-    return None
-
-
 def choose_poll(
     polls: list[dict[str, Any]],
     state: dict[str, Any],
@@ -549,98 +373,6 @@ def send_next_poll(
             "poll": poll,
             "response": response,
         }
-
-
-class PollScheduler:
-    def __init__(
-        self,
-        service: Any,
-        polls_path: Path,
-        poll_state_path: Path,
-        schedule_path: Path,
-        schedule_state_path: Path,
-        calendar_config_path: Path | None = None,
-    ) -> None:
-        self.service = service
-        self.polls_path = polls_path
-        self.poll_state_path = poll_state_path
-        self.schedule_path = schedule_path
-        self.schedule_state_path = schedule_state_path
-        self.calendar_config_path = calendar_config_path
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
-
-    def start(self) -> None:
-        self._thread = threading.Thread(
-            target=self._loop, name="wa-scheduler", daemon=True
-        )
-        self._thread.start()
-        log.info("Scheduler started")
-
-    def stop(self) -> None:
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout=5)
-
-    def _loop(self) -> None:
-        while not self._stop.wait(SCHEDULER_INTERVAL):
-            try:
-                self._tick()
-            except Exception:
-                log.exception("scheduler tick failed")
-
-    def _tick(self) -> None:
-        if self.calendar_config_path is not None:
-            try:
-                import calendar_sync
-
-                if calendar_sync.calendar_rules_enabled(
-                    self.calendar_config_path
-                ):
-                    return
-            except Exception:
-                log.debug("calendar rule check failed", exc_info=True)
-
-        try:
-            schedule = load_schedule(self.schedule_path)
-        except ValueError as exc:
-            log.error("Invalid schedule: %s", exc)
-            return
-
-        if not schedule["enabled"] or not schedule["group"]:
-            return
-        if not self.service.connected.is_set():
-            return
-
-        now = datetime.now(ZoneInfo(schedule["timezone"]))
-        slot = due_schedule_slot(schedule, now)
-        if slot is None:
-            return
-
-        state = load_schedule_state(self.schedule_state_path)
-        if state.get("last_slot") == slot.isoformat():
-            return
-
-        result = send_next_poll(
-            self.service,
-            self.polls_path,
-            self.poll_state_path,
-            schedule["group"],
-        )
-        state.update(
-            {
-                "last_slot": slot.isoformat(),
-                "last_sent_at": now.isoformat(),
-                "last_question": result["poll"]["question"],
-            }
-        )
-        save_schedule_state(self.schedule_state_path, state)
-        log.info(
-            "Scheduled poll sent for %s (%s): %s",
-            slot.isoformat(),
-            schedule["group"],
-            result["poll"]["question"],
-        )
 
 
 def match_group(groups: list[dict[str, str]], query: str) -> dict[str, str]:
@@ -1290,8 +1022,6 @@ def serve(args: argparse.Namespace) -> int:
 
     polls_path = Path(args.polls)
     poll_state_path = Path(args.poll_state)
-    schedule_path = Path(args.schedule)
-    schedule_state_path = Path(args.schedule_state)
     poll_history_path = Path(args.poll_history)
     contacts_path = Path(args.contacts)
     calendars_path = Path(args.calendars)
@@ -1313,16 +1043,6 @@ def serve(args: argparse.Namespace) -> int:
     )
     calendar_scheduler.start()
 
-    scheduler = PollScheduler(
-        service,
-        polls_path,
-        poll_state_path,
-        schedule_path,
-        schedule_state_path,
-        calendars_path,
-    )
-    scheduler.start()
-
     web_server = None
     if not args.no_web:
         try:
@@ -1334,18 +1054,10 @@ def serve(args: argparse.Namespace) -> int:
                     "polls_path": polls_path,
                     "poll_state_path": poll_state_path,
                     "qr_path": Path(args.qr),
-                    "schedule_path": schedule_path,
-                    "schedule_state_path": schedule_state_path,
                     "parse_polls": parse_polls,
-                    "load_schedule": load_schedule,
-                    "save_schedule": save_schedule,
-                    "normalize_schedule": normalize_schedule,
-                    "schedule_slots": schedule_slots,
-                    "next_schedule_slots": next_schedule_slots,
                     "send_next_poll": send_next_poll,
                     "choose_poll": choose_poll,
                     "load_poll_state": load_poll_state,
-                    "load_schedule_state": load_schedule_state,
                     "poll_history_path": poll_history_path,
                     "load_poll_history": load_poll_history,
                     "contacts_path": contacts_path,
@@ -1359,7 +1071,6 @@ def serve(args: argparse.Namespace) -> int:
                     "calendar_state_path": calendar_state_path,
                     "calendar_scheduler": calendar_scheduler,
                     "default_group": os.environ.get("WA_GROUP", ""),
-                    "weekdays": WEEKDAYS_DE,
                 },
             )
             web_server = start_web(app, args.web_host, args.web_port)
@@ -1373,7 +1084,6 @@ def serve(args: argparse.Namespace) -> int:
         server = _ThreadingUnixServer(str(socket_path), _RequestHandler)
     except OSError:
         log.exception("Could not bind Unix socket %s", socket_path)
-        scheduler.stop()
         if web_server is not None:
             web_server.shutdown()
             web_server.server_close()
@@ -1405,7 +1115,6 @@ def serve(args: argparse.Namespace) -> int:
             log.warning("Stopping: %s", service.failure or "connection ended")
             break
 
-    scheduler.stop()
     calendar_scheduler.stop()
     if web_server is not None:
         web_server.shutdown()
@@ -1737,16 +1446,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--poll-state",
         default=str(DEFAULT_POLL_STATE),
         help=f"poll rotation state (default: {DEFAULT_POLL_STATE})",
-    )
-    serve_parser.add_argument(
-        "--schedule",
-        default=str(DEFAULT_SCHEDULE_FILE),
-        help=f"schedule file (default: {DEFAULT_SCHEDULE_FILE})",
-    )
-    serve_parser.add_argument(
-        "--schedule-state",
-        default=str(DEFAULT_SCHEDULE_STATE),
-        help=f"schedule state (default: {DEFAULT_SCHEDULE_STATE})",
     )
     serve_parser.add_argument(
         "--poll-history",

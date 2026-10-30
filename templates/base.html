@@ -31,7 +31,6 @@
       <a class="{{ 'active' if active == 'votes' else '' }}" href="{{ url_for('votes_page') }}">Ergebnisse</a>
       <a class="{{ 'active' if active == 'contacts' else '' }}" href="{{ url_for('contacts_page') }}">Namen</a>
       <a class="{{ 'active' if active == 'calendar' else '' }}" href="{{ url_for('calendar_page') }}">Kalender</a>
-      <a class="{{ 'active' if active == 'schedule' else '' }}" href="{{ url_for('schedule_page') }}">Zeitplan</a>
       {% if current_user %}
         <span class="who" title="{{ current_user.get('email', '') }}">
           {{ current_user.get('name') or current_user.get('sub') }}

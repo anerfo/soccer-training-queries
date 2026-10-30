@@ -61,7 +61,7 @@
     <p class="muted">Noch kein Kalender hinzugefügt.</p>
   {% endif %}
 
-  <form method="post" action="{{ url_for('add_calendar') }}" class="schedule-form">
+  <form method="post" action="{{ url_for('add_calendar') }}" class="form-grid">
     <label>Name
       <input type="text" name="name" required placeholder="AH Training">
     </label>
@@ -86,8 +86,6 @@
   </div>
   <p class="muted small">
     Passt der Termintitel, wird die Nachricht relativ zum Terminbeginn gesendet.
-    Sobald eine aktive Regel existiert, pausiert der bisherige Wochen-Zeitplan
-    automatisch.
   </p>
 
   {% if rules %}
@@ -161,7 +159,7 @@
     <p class="muted">Noch keine Regel angelegt.</p>
   {% endif %}
 
-  <form method="post" action="{{ url_for('add_calendar_rule') }}" class="schedule-form">
+  <form method="post" action="{{ url_for('add_calendar_rule') }}" class="form-grid">
     <label>Kalender
       <select name="calendar_id" required>
         {% for calendar in calendars %}

@@ -13,7 +13,8 @@ example, a soccer group). It uses [neonize](https://github.com/krypton-byte/neon
 - `wa.py serve` keeps the WhatsApp session connected, prints a QR code for
   pairing, listens on a local Unix socket (`data/wa.sock`), and serves a web
   interface at `http://127.0.0.1:8080`.
-- The built-in scheduler sends the next poll on the configured weekday/time.
+- The calendar scheduler sends configured polls or texts relative to events
+  from public ICS feeds.
 - `wa.py send ...` and `wa.py poll-next ...` can still be used from the CLI or
   cron.
 - The session is stored in `data/wa_session.db`, so you only scan the QR once.
@@ -47,8 +48,8 @@ docker compose exec wa python wa.py polls
 docker compose exec wa python wa.py poll-next --group "Soccer Mates"
 ```
 
-`data/` on the host stores the session, socket, QR code, rotation state, and
-the schedule. `polls.txt` is bind-mounted read-write so the web editor can save
+`data/` on the host stores the session, socket, QR code, rotation state,
+calendar configuration and calendar send state. `polls.txt` is bind-mounted read-write so the web editor can save
 it. `WA_UID`/`WA_GID` make the container user match your host user so it can
 write to `./data`; they default to `1000`.
 
@@ -61,10 +62,10 @@ Stop the daemon with `docker compose down`.
 
 `wa.py serve` starts the web UI on `http://127.0.0.1:8080` by default. Use
 `--no-web` to disable it, or `--web-host`/`--web-port` to change the bind
-address. The UI has three pages:
+address. The UI has these pages:
 
-- **Übersicht** — connection status, next scheduled polls, a preview of the
-  next poll and a "send now" button.
+- **Übersicht** — connection status, a preview of the next poll, calendar
+  counts and a "send now" button.
 - **Umfragen** — edit `polls.txt` in the browser. The list is validated before
   saving and a preview is shown below the editor.
 - **Ergebnisse** — browse the most recently sent polls, see who accepted and
@@ -76,10 +77,6 @@ address. The UI has three pages:
   The mapping lives in `data/contacts.json`.
 - **Kalender** — attach public Google Calendar ICS feeds and send WhatsApp
   messages/polls relative to events. See below.
-- **Zeitplan** — weekly day/time/timezone/group configuration plus a calendar.
-  Scheduled dates are green. Click a date to skip it (for example Christmas);
-  click again to re-enable it. Extra one-off dates can be added as
-  `JJJJ-MM-TT`, one per line.
 
 ### Calendar-driven messages
 
@@ -101,9 +98,6 @@ message is sent for it. The feed is re-fetched right before sending to honour
 last-minute deletions. The **Vorschau** table shows the upcoming sends and the
 poll rotation. Calendar configuration lives in `data/calendars.json`, send
 state in `data/calendar_state.json`.
-
-As soon as an active calendar rule exists, the old weekly **Zeitplan** sender is
-paused automatically so nothing is sent twice.
 
 ### Poll results
 
@@ -129,12 +123,6 @@ from `polls.txt`) with random yes/no votes from made-up members, so the
 **Ergebnisse** and **Namen** pages can be tried without a real account. A
 **Simulationsdaten löschen** button removes those test polls again; real polls
 are kept.
-
-The scheduler runs inside the daemon and reads the schedule every 20 seconds.
-It sends at most once per due slot, with a 30-minute grace period. If the
-daemon was offline for longer than that, the missed poll is not sent late.
-Settings are stored in `data/schedule.json`; the last send is tracked in
-`data/schedule_state.json`.
 
 ### Authentication (OpenID Connect / Authelia)
 
@@ -179,8 +167,6 @@ local development); set `AUTH_DISABLED=1` to silence that on purpose.
 The web UI can send messages, so keep it bound to localhost unless you protect
 it. In Docker, the port is published as `127.0.0.1:8080:8080` for this reason.
 
-If you use the built-in scheduler, do not also run the cron `poll-next` job.
-
 ## First run (pair the account)
 
 ```bash
@@ -192,7 +178,7 @@ open **WhatsApp > Linked devices > Link a device** and scan it. The image file
 is overwritten as the QR rotates.
 
 Once you see `Connected to WhatsApp`, open `http://127.0.0.1:8080` to manage
-polls and the schedule, and leave the daemon running.
+polls, results, names and calendars, and leave the daemon running.
 
 To run it in the background:
 
@@ -286,10 +272,9 @@ decrypted while the same session stays paired and the poll is still known to it.
 
 ## Cron
 
-The web scheduler is the recommended way to send the weekly poll. Cron is
-still useful for reminders or if you prefer an external scheduler. It only
-needs the `send` or `poll-next` command; the daemon must already be running.
-Do not use both the web scheduler and the cron `poll-next` job.
+The **Kalender** page is the recommended way to schedule recurring polls,
+reports and reminders. Cron is still useful for one-off sends: it only needs
+the `send` or `poll-next` command, and the daemon must already be running.
 
 ```cron
 # Every Saturday at 10:00, remind the group about the match.

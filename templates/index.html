@@ -16,14 +16,10 @@
   </div>
 
   <div class="card">
-    <span class="label">Zeitplan</span>
-    {% if schedule.enabled %}
-      <strong class="ok">Aktiv</strong>
-    {% else %}
-      <strong>Pausiert</strong>
-    {% endif %}
-    <small>{{ weekdays[schedule.weekday] }}, {{ schedule.time }} · {{ schedule.timezone }}</small>
-    <small>{{ schedule.group or "Keine Gruppe eingestellt" }}</small>
+    <span class="label">Kalender</span>
+    <strong>{{ calendar_count }} / {{ rule_count }}</strong>
+    <small>Kalender / Regeln</small>
+    <small><a href="{{ url_for('calendar_page') }}">Kalender verwalten</a></small>
   </div>
 
   <div class="card">
@@ -33,10 +29,6 @@
     {% if polls_error %}<small class="bad">{{ polls_error }}</small>{% endif %}
   </div>
 </div>
-
-{% if schedule_error %}
-  <div class="flash error">{{ schedule_error }}</div>
-{% endif %}
 
 {% if not status.connected %}
 <section class="panel qr-panel">
@@ -109,33 +101,9 @@
 
 <section class="panel">
   <div class="panel-head">
-    <h2>Nächste geplante Umfragen</h2>
-    <a class="button secondary" href="{{ url_for('schedule_page') }}">Zeitplan bearbeiten</a>
-  </div>
-
-  {% if next_slots %}
-    <ul class="slot-list">
-      {% for slot in next_slots %}
-        <li>
-          <span>{{ slot.strftime('%d.%m.%Y') }}</span>
-          <strong>{{ slot.strftime('%H:%M') }}</strong>
-        </li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <p class="muted">Keine Termine geplant. Aktiviere den Zeitplan oder füge zusätzliche Termine hinzu.</p>
-  {% endif %}
-
-  {% if sched_state.last_sent_at %}
-    <p class="muted small">Zuletzt gesendet: {{ sched_state.last_sent_at }}</p>
-  {% endif %}
-</section>
-
-<section class="panel">
-  <div class="panel-head">
     <h2>Jetzt senden</h2>
   </div>
-  <p class="muted">Sendet die nächste Umfrage aus <code>polls.txt</code> an die konfigurierte Gruppe.</p>
+  <p class="muted">Sendet die nächste Umfrage aus <code>polls.txt</code> an die angegebene Gruppe.</p>
 
   {% if next_poll %}
     <div class="poll-preview">
@@ -155,9 +123,14 @@
   {% endif %}
 
   <form method="post" action="{{ url_for('send_now') }}"
-        onsubmit="return confirm('Jetzt die nächste Umfrage senden?');">
-    <input type="hidden" name="group" value="{{ schedule.group }}">
-    <button type="submit">Nächste Umfrage senden</button>
+        onsubmit="return confirm('Jetzt die nächste Umfrage senden?');"
+        class="form-grid">
+    <label class="wide">Gruppe (Name oder JID)
+      <input type="text" name="group" value="{{ default_group }}" placeholder="z. B. AH Training" required>
+    </label>
+    <div class="form-actions wide">
+      <button type="submit">Nächste Umfrage senden</button>
+    </div>
   </form>
 </section>
 {% endblock %}

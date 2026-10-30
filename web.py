@@ -1,8 +1,7 @@
-"""Small Flask UI for editing polls and managing the send schedule."""
+"""Small Flask UI for polls, results, contacts and calendars."""
 
 from __future__ import annotations
 
-import calendar as calendar_module
 import hashlib
 import logging
 import os
@@ -11,10 +10,9 @@ import secrets
 import threading
 import time
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
 from urllib.parse import quote, urlsplit
-from zoneinfo import ZoneInfo
 
 from flask import (
     Flask,
@@ -46,22 +44,6 @@ from calendar_sync import (
     parse_offset,
     save_calendar_config,
 )
-
-MONTHS_DE = (
-    "Januar",
-    "Februar",
-    "März",
-    "April",
-    "Mai",
-    "Juni",
-    "Juli",
-    "August",
-    "September",
-    "Oktober",
-    "November",
-    "Dezember",
-)
-WEEKDAYS_SHORT_DE = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
 
 log = logging.getLogger("wa.web")
 
@@ -96,21 +78,6 @@ SIMULATION_FALLBACK_POLL = {
 
 def _ctx() -> dict[str, Any]:
     return current_app.config["CTX"]
-
-
-def _fallback_schedule(ctx: dict[str, Any]) -> dict[str, Any]:
-    schedule = ctx["normalize_schedule"]({})
-    schedule["group"] = ctx.get("default_group", "")
-    return schedule
-
-
-def _schedule_or_default(
-    ctx: dict[str, Any],
-) -> tuple[dict[str, Any], str | None]:
-    try:
-        return ctx["load_schedule"](ctx["schedule_path"]), None
-    except ValueError as exc:
-        return _fallback_schedule(ctx), str(exc)
 
 
 def _read_polls(
@@ -163,6 +130,16 @@ def _calendar_config(ctx: dict[str, Any]) -> dict[str, Any]:
     except CalendarError:
         log.exception("could not load calendar config")
         return {"calendars": [], "rules": []}
+
+
+def _default_group(ctx: dict[str, Any]) -> str:
+    group = str(ctx.get("default_group") or "").strip()
+    if group:
+        return group
+    for rule in _calendar_config(ctx)["rules"]:
+        if rule.get("enabled", True) and rule.get("group"):
+            return str(rule["group"]).strip()
+    return ""
 
 
 def _jid_number(jid: str) -> str:
@@ -285,92 +262,6 @@ def _format_timestamp(value: Any) -> str:
         return datetime.fromtimestamp(stamp).strftime("%d.%m.%Y %H:%M")
     except (OverflowError, OSError, ValueError):
         return ""
-
-
-def _month_param(value: str | None) -> tuple[int, int, str]:
-    if value:
-        try:
-            parsed = datetime.strptime(value, "%Y-%m")
-            return parsed.year, parsed.month, f"{parsed.year:04d}-{parsed.month:02d}"
-        except ValueError:
-            pass
-    today = date.today()
-    return today.year, today.month, f"{today.year:04d}-{today.month:02d}"
-
-
-def _shift_month(year: int, month: int, delta: int) -> tuple[int, int, str]:
-    index = year * 12 + (month - 1) + delta
-    new_year, new_month = divmod(index, 12)
-    new_month += 1
-    return new_year, new_month, f"{new_year:04d}-{new_month:02d}"
-
-
-def _calendar_weeks(
-    year: int, month: int, schedule: dict[str, Any], today: date
-) -> list[list[dict[str, Any]]]:
-    skip = set(schedule["skip_dates"])
-    extra = set(schedule["extra_dates"])
-    weeks: list[list[dict[str, Any]]] = []
-
-    for week in calendar_module.Calendar(firstweekday=0).monthdatescalendar(
-        year, month
-    ):
-        days = []
-        for day in week:
-            iso = day.isoformat()
-            weekly = day.weekday() == schedule["weekday"]
-            is_extra = iso in extra
-            scheduled = weekly or is_extra
-            skipped = scheduled and iso in skip
-            days.append(
-                {
-                    "date": day,
-                    "in_month": day.month == month,
-                    "clickable": scheduled,
-                    "scheduled": scheduled and not skipped,
-                    "skipped": skipped,
-                    "extra": is_extra and not weekly and not skipped,
-                    "today": day == today,
-                }
-            )
-        weeks.append(days)
-    return weeks
-
-
-def _render_schedule(
-    ctx: dict[str, Any],
-    schedule: dict[str, Any],
-    year: int,
-    month: int,
-    error: str | None = None,
-    status: int = 200,
-) -> tuple[str, int]:
-    timezone = ZoneInfo(schedule["timezone"])
-    now = datetime.now(timezone)
-    weeks = _calendar_weeks(year, month, schedule, now.date())
-    next_slots = ctx["next_schedule_slots"](schedule, now, 5)
-    state = ctx["load_schedule_state"](ctx["schedule_state_path"])
-    _prev_year, _prev_month, prev_value = _shift_month(year, month, -1)
-    _next_year, _next_month, next_value = _shift_month(year, month, 1)
-
-    html = render_template(
-        "schedule.html",
-        active="schedule",
-        schedule=schedule,
-        weeks=weeks,
-        year=year,
-        month=month,
-        month_label=MONTHS_DE[month - 1],
-        month_param=f"{year:04d}-{month:02d}",
-        prev_month=prev_value,
-        next_month=next_value,
-        next_slots=next_slots,
-        sched_state=state,
-        error=error,
-        weekdays=ctx["weekdays"],
-        weekdays_short=WEEKDAYS_SHORT_DE,
-    )
-    return html, status
 
 
 _AUTH_UNSET = object()
@@ -688,8 +579,6 @@ def create_app(
     @app.get("/")
     def index() -> str:
         ctx = _ctx()
-        schedule, schedule_error = _schedule_or_default(ctx)
-        now = datetime.now(ZoneInfo(schedule["timezone"]))
         _text, polls, polls_error = _read_polls(ctx)
         next_poll = None
         next_poll_index = None
@@ -701,20 +590,19 @@ def create_app(
                 )
             except Exception:
                 log.exception("could not determine next poll")
+        calendar_config = _calendar_config(ctx)
         return render_template(
             "index.html",
             active="dashboard",
             status=service.status(),
-            schedule=schedule,
-            schedule_error=schedule_error,
             polls_error=polls_error,
             poll_count=len(polls),
             next_poll=next_poll,
             next_poll_index=next_poll_index,
             next_poll_total=len(polls),
-            next_slots=ctx["next_schedule_slots"](schedule, now, 5),
-            sched_state=ctx["load_schedule_state"](ctx["schedule_state_path"]),
-            weekdays=ctx["weekdays"],
+            default_group=_default_group(ctx),
+            calendar_count=len(calendar_config["calendars"]),
+            rule_count=len(calendar_config["rules"]),
             has_simulated=any(
                 poll.get("simulated") for poll in _load_history(ctx)
             ),
@@ -855,10 +743,7 @@ def create_app(
         ctx = _ctx()
         polls = _load_history(ctx)
         contacts = _load_contact_map(ctx)
-        schedule, _schedule_error = _schedule_or_default(ctx)
-        group = (
-            schedule.get("group") or ctx.get("default_group", "")
-        ).strip()
+        group = _default_group(ctx)
 
         whatsapp_names = _whatsapp_names(polls)
         auto_named = 0
@@ -1259,94 +1144,10 @@ def create_app(
                 break
         return redirect(url_for("calendar_page"))
 
-    @app.get("/schedule")
-    def schedule_page() -> Any:
-        ctx = _ctx()
-        schedule, error = _schedule_or_default(ctx)
-        year, month, _value = _month_param(request.args.get("month"))
-        return _render_schedule(ctx, schedule, year, month, error)
-
-    @app.post("/schedule")
-    def save_schedule_page() -> Any:
-        ctx = _ctx()
-        existing, _error = _schedule_or_default(ctx)
-        payload = {
-            "enabled": request.form.get("enabled") == "on",
-            "weekday": request.form.get("weekday", "2"),
-            "time": request.form.get("time", "18:00"),
-            "timezone": request.form.get("timezone", "Europe/Berlin"),
-            "group": request.form.get("group", ""),
-            "skip_dates": existing["skip_dates"],
-            "extra_dates": request.form.get("extra_dates", ""),
-        }
-        try:
-            schedule = ctx["normalize_schedule"](payload)
-            ctx["save_schedule"](ctx["schedule_path"], schedule)
-        except (ValueError, OSError) as exc:
-            flash(f"Zeitplan nicht gespeichert: {exc}", "error")
-            return redirect(
-                url_for(
-                    "schedule_page", month=request.form.get("month", "")
-                )
-            )
-
-        flash("Zeitplan gespeichert.", "success")
-        return redirect(
-            url_for("schedule_page", month=request.form.get("month", ""))
-        )
-
-    @app.post("/schedule/toggle")
-    def toggle_date() -> Any:
-        ctx = _ctx()
-        value = request.form.get("date", "")
-        month = request.form.get("month", "")
-        try:
-            parsed = date.fromisoformat(value)
-        except ValueError:
-            flash("Ungültiges Datum.", "error")
-            return redirect(url_for("schedule_page", month=month))
-
-        schedule, _error = _schedule_or_default(ctx)
-        skip = set(schedule["skip_dates"])
-        if parsed.isoformat() in skip:
-            skip.remove(parsed.isoformat())
-            message = f"{parsed.strftime('%d.%m.%Y')} ist wieder aktiv."
-        else:
-            skip.add(parsed.isoformat())
-            message = f"{parsed.strftime('%d.%m.%Y')} wird übersprungen."
-
-        schedule["skip_dates"] = sorted(skip)
-        try:
-            ctx["save_schedule"](ctx["schedule_path"], schedule)
-        except (ValueError, OSError) as exc:
-            flash(f"Änderung nicht gespeichert: {exc}", "error")
-        else:
-            flash(message, "success")
-        return redirect(url_for("schedule_page", month=month))
-
-    @app.post("/schedule/clear-skips")
-    def clear_skips() -> Any:
-        ctx = _ctx()
-        month = request.form.get("month", "")
-        schedule, _error = _schedule_or_default(ctx)
-        schedule["skip_dates"] = []
-        try:
-            ctx["save_schedule"](ctx["schedule_path"], schedule)
-        except (ValueError, OSError) as exc:
-            flash(f"Änderung nicht gespeichert: {exc}", "error")
-        else:
-            flash("Alle Ausnahmen entfernt.", "success")
-        return redirect(url_for("schedule_page", month=month))
-
     @app.post("/send-now")
     def send_now() -> Any:
         ctx = _ctx()
-        schedule, _error = _schedule_or_default(ctx)
-        group = (
-            request.form.get("group")
-            or schedule["group"]
-            or ctx.get("default_group", "")
-        ).strip()
+        group = (request.form.get("group") or _default_group(ctx)).strip()
         if not group:
             flash("Keine Gruppe konfiguriert.", "error")
             return redirect(url_for("index"))
