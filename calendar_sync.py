@@ -20,6 +20,7 @@ import requests
 log = logging.getLogger("wa.calendar")
 
 CACHE_SECONDS = 300
+ERROR_CACHE_SECONDS = 300
 LOOKAHEAD_DAYS = 35
 GRACE_MINUTES = 60
 STATE_RETENTION_DAYS = 90
@@ -137,13 +138,30 @@ def match_event(rule: dict[str, Any], summary: str) -> bool:
 
 
 def fetch_ics(url: str, timeout: float = 15.0) -> bytes:
-    response = requests.get(
-        url,
-        timeout=timeout,
-        headers={"User-Agent": "whatsapp-agent-calendar/1.0"},
-    )
-    response.raise_for_status()
-    return response.content
+    try:
+        response = requests.get(
+            url,
+            timeout=timeout,
+            headers={
+                "User-Agent": "whatsapp-agent-calendar/1.0",
+                "Accept": "text/calendar, text/plain;q=0.8, */*;q=0.5",
+            },
+        )
+    except Exception as exc:
+        raise CalendarError(
+            f"could not fetch calendar: {type(exc).__name__}"
+        ) from exc
+    if response.status_code >= 400:
+        raise CalendarError(
+            f"calendar URL returned HTTP {response.status_code}"
+        )
+    body = response.content
+    if b"begin:vcalendar" not in body[:1024].lower():
+        raise CalendarError(
+            "URL did not return iCalendar data; use the public or secret "
+            "Google Calendar address ending in /basic.ics"
+        )
+    return body
 
 
 def expand_events(
@@ -152,7 +170,10 @@ def expand_events(
     try:
         calendar = icalendar.Calendar.from_ical(ics_bytes)
     except Exception as exc:
-        raise CalendarError(f"cannot parse iCalendar data: {exc}") from exc
+        message = str(exc).splitlines()[0][:200]
+        raise CalendarError(
+            f"cannot parse iCalendar data: {message}"
+        ) from exc
 
     try:
         occurrences = recurring_ical_events.of(calendar).between(start, end)
@@ -196,9 +217,15 @@ def expand_events(
 
 
 class CalendarFeedCache:
-    def __init__(self, ttl: float = CACHE_SECONDS) -> None:
+    def __init__(
+        self,
+        ttl: float = CACHE_SECONDS,
+        error_ttl: float = ERROR_CACHE_SECONDS,
+    ) -> None:
         self.ttl = ttl
+        self.error_ttl = error_ttl
         self._data: dict[str, tuple[float, bytes]] = {}
+        self._errors: dict[str, tuple[float, CalendarError]] = {}
         self._lock = threading.Lock()
 
     def get(self, url: str, force: bool = False) -> bytes:
@@ -207,9 +234,29 @@ class CalendarFeedCache:
             entry = self._data.get(url)
             if entry is not None and not force and now - entry[0] < self.ttl:
                 return entry[1]
-        data = fetch_ics(url)
+            error = self._errors.get(url)
+            if (
+                error is not None
+                and not force
+                and now - error[0] < self.error_ttl
+            ):
+                raise error[1]
+        try:
+            data = fetch_ics(url)
+        except CalendarError as exc:
+            with self._lock:
+                self._errors[url] = (now, exc)
+            raise
+        except Exception as exc:
+            short = CalendarError(
+                f"could not fetch calendar: {type(exc).__name__}"
+            )
+            with self._lock:
+                self._errors[url] = (now, short)
+            raise short from exc
         with self._lock:
             self._data[url] = (now, data)
+            self._errors.pop(url, None)
         return data
 
 
@@ -237,6 +284,7 @@ class CalendarScheduler:
         self.parse_polls = parse_polls
         self.interval = interval
         self.cache = CalendarFeedCache()
+        self._error_logged: dict[str, float] = {}
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -335,15 +383,23 @@ class CalendarScheduler:
             ]
             if not calendar_rules:
                 continue
+            url = str(calendar.get("url", ""))
             try:
                 events = self._events(calendar, window_start, window_end)
             except Exception as exc:
-                log.warning(
-                    "could not load calendar %s: %s",
-                    calendar.get("name") or calendar.get("url"),
-                    exc,
-                )
+                now_ts = time.monotonic()
+                if (
+                    now_ts - self._error_logged.get(url, 0)
+                    >= ERROR_CACHE_SECONDS
+                ):
+                    log.warning(
+                        "could not load calendar %s: %s",
+                        calendar.get("name") or "calendar",
+                        str(exc)[:200],
+                    )
+                    self._error_logged[url] = now_ts
                 continue
+            self._error_logged.pop(url, None)
 
             due: list[tuple[dict[str, Any], dict[str, Any], str]] = []
             for rule in calendar_rules:

@@ -46,6 +46,38 @@ class FakeService:
         return {"ok": True}
 
 
+class FetchTests(unittest.TestCase):
+    class Response:
+        def __init__(self, body, status=200):
+            self.content = body
+            self.status_code = status
+
+    def test_html_response_is_rejected_with_short_error(self):
+        response = self.Response(b"<!doctype html><html>sign in</html>")
+        with mock.patch(
+            "calendar_sync.requests.get", return_value=response
+        ):
+            with self.assertRaises(calendar_sync.CalendarError) as ctx:
+                calendar_sync.fetch_ics("https://example.com/cal")
+        message = str(ctx.exception)
+        self.assertIn("iCalendar", message)
+        self.assertLess(len(message), 300)
+
+    def test_error_is_cached(self):
+        cache = calendar_sync.CalendarFeedCache()
+        calls = {"count": 0}
+
+        def fail(_url):
+            calls["count"] += 1
+            raise calendar_sync.CalendarError("boom")
+
+        with mock.patch("calendar_sync.fetch_ics", side_effect=fail):
+            for _ in range(3):
+                with self.assertRaises(calendar_sync.CalendarError):
+                    cache.get("https://example.com/cal")
+        self.assertEqual(calls["count"], 1)
+
+
 class OffsetTests(unittest.TestCase):
     def test_offsets(self):
         self.assertEqual(calendar_sync.parse_offset("20h"), 1200)
