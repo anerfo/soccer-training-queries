@@ -1,3 +1,4 @@
+import json
 import tempfile
 import threading
 import time
@@ -8,6 +9,11 @@ from zoneinfo import ZoneInfo
 
 import wa
 from web import create_app
+
+
+class FakeCalendarScheduler:
+    def preview(self, now=None, limit=12):
+        return [], None
 
 
 class FakeService:
@@ -203,6 +209,7 @@ class WebTests(unittest.TestCase):
         self.qr_path = base / "qr.png"
         self.poll_history_path = base / "poll_history.json"
         self.contacts_path = base / "contacts.json"
+        self.calendar_config_path = base / "calendars.json"
         self.service = FakeService()
         wa.save_schedule(
             self.schedule_path,
@@ -244,6 +251,8 @@ class WebTests(unittest.TestCase):
                 "jid": "1@g.us",
             },
             "poll_history_store": wa.PollHistoryStore(self.poll_history_path),
+            "calendar_config_path": self.calendar_config_path,
+            "calendar_scheduler": FakeCalendarScheduler(),
             "default_group": "AH Training",
             "weekdays": wa.WEEKDAYS_DE,
         }
@@ -261,6 +270,7 @@ class WebTests(unittest.TestCase):
             "/schedule",
             "/votes",
             "/contacts",
+            "/calendar",
             "/api/status",
         ):
             response = self.client.get(path)
@@ -541,6 +551,96 @@ class WebTests(unittest.TestCase):
         self.assertIn('id="nav-toggle"', html)
         self.assertIn('id="main-nav"', html)
         self.assertIn('aria-controls="main-nav"', html)
+
+    def test_calendar_add_and_rule(self):
+        response = self.client.post(
+            "/calendar/add",
+            data={
+                "name": "Test",
+                "url": "https://example.com/cal.ics",
+                "enabled": "on",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        config = json.loads(self.calendar_config_path.read_text())
+        self.assertEqual(len(config["calendars"]), 1)
+        calendar_id = config["calendars"][0]["id"]
+
+        response = self.client.post(
+            "/calendar/rule/add",
+            data={
+                "calendar_id": calendar_id,
+                "match": "AH-Training",
+                "match_type": "contains",
+                "group": "Gruppe",
+                "kind": "poll",
+                "offset": "20h",
+                "poll_questions": "Erste?\nZweite?",
+                "enabled": "on",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        config = json.loads(self.calendar_config_path.read_text())
+        self.assertEqual(len(config["rules"]), 1)
+        self.assertEqual(
+            config["rules"][0]["poll_questions"], ["Erste?", "Zweite?"]
+        )
+        html = self.client.get("/calendar").get_data(as_text=True)
+        self.assertIn("AH-Training", html)
+        self.assertIn("Test", html)
+
+    def test_delete_calendar_removes_rules(self):
+        self.client.post(
+            "/calendar/add",
+            data={
+                "name": "Test",
+                "url": "https://example.com/cal.ics",
+                "enabled": "on",
+            },
+        )
+        config = json.loads(self.calendar_config_path.read_text())
+        calendar_id = config["calendars"][0]["id"]
+        self.client.post(
+            "/calendar/rule/add",
+            data={
+                "calendar_id": calendar_id,
+                "match": "X",
+                "group": "G",
+                "kind": "text",
+                "text": "Hi",
+                "offset": "1h",
+                "enabled": "on",
+            },
+        )
+        self.client.post("/calendar/delete", data={"id": calendar_id})
+        config = json.loads(self.calendar_config_path.read_text())
+        self.assertEqual(config["calendars"], [])
+        self.assertEqual(config["rules"], [])
+
+    def test_invalid_calendar_offset_is_rejected(self):
+        self.client.post(
+            "/calendar/add",
+            data={
+                "name": "Test",
+                "url": "https://example.com/cal.ics",
+                "enabled": "on",
+            },
+        )
+        config = json.loads(self.calendar_config_path.read_text())
+        calendar_id = config["calendars"][0]["id"]
+        self.client.post(
+            "/calendar/rule/add",
+            data={
+                "calendar_id": calendar_id,
+                "match": "X",
+                "group": "G",
+                "kind": "poll",
+                "offset": "später",
+                "enabled": "on",
+            },
+        )
+        config = json.loads(self.calendar_config_path.read_text())
+        self.assertEqual(config["rules"], [])
 
     def test_group_check_endpoint(self):
         response = self.client.get(

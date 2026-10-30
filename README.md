@@ -74,10 +74,36 @@ address. The UI has three pages:
   contact store (the phone's address book); missing names can be typed in.
   The WhatsApp display name (push name) is shown under each number as a hint.
   The mapping lives in `data/contacts.json`.
+- **Kalender** — attach public Google Calendar ICS feeds and send WhatsApp
+  messages/polls relative to events. See below.
 - **Zeitplan** — weekly day/time/timezone/group configuration plus a calendar.
   Scheduled dates are green. Click a date to skip it (for example Christmas);
   click again to re-enable it. Extra one-off dates can be added as
   `JJJJ-MM-TT`, one per line.
+
+### Calendar-driven messages
+
+Add a calendar with its public ICS URL (Google Calendar: *Settings → Integrate
+calendar → Secret address in iCal format*, or the `…/public/basic.ics` link).
+No OAuth is required; only public feeds are read.
+
+Rules match events by title (`contains`, `exact` or `regex`) and define:
+
+- the target group,
+- the message type: a poll from `polls.txt` or a free text message,
+- the offset before the event (for example `20h`, `2d`, `90m`),
+- an optional **rotation list** for polls (one question per line, in order;
+  empty means rotate through all questions in `polls.txt`).
+
+Recurring events are expanded with their `RRULE`; deleting a single occurrence
+in Google Calendar (or marking it cancelled) removes it from the feed, so no
+message is sent for it. The feed is re-fetched right before sending to honour
+last-minute deletions. The **Vorschau** table shows the upcoming sends and the
+poll rotation. Calendar configuration lives in `data/calendars.json`, send
+state in `data/calendar_state.json`.
+
+As soon as an active calendar rule exists, the old weekly **Zeitplan** sender is
+paused automatically so nothing is sent twice.
 
 ### Poll results
 

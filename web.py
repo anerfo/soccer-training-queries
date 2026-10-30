@@ -39,6 +39,13 @@ from auth import (
     build_auth_from_env,
     new_pkce_pair,
 )
+from calendar_sync import (
+    CalendarError,
+    load_calendar_config,
+    new_id as new_calendar_id,
+    parse_offset,
+    save_calendar_config,
+)
 
 MONTHS_DE = (
     "Januar",
@@ -145,6 +152,17 @@ def _load_contact_map(ctx: dict[str, Any]) -> dict[str, str]:
     except Exception:
         log.exception("could not load contacts")
         return {}
+
+
+def _calendar_config(ctx: dict[str, Any]) -> dict[str, Any]:
+    path = ctx.get("calendar_config_path")
+    if not path:
+        return {"calendars": [], "rules": []}
+    try:
+        return load_calendar_config(path)
+    except CalendarError:
+        log.exception("could not load calendar config")
+        return {"calendars": [], "rules": []}
 
 
 def _jid_number(jid: str) -> str:
@@ -1059,6 +1077,187 @@ def create_app(
 
         flash(f"{len(polls)} Umfragen gespeichert.", "success")
         return redirect(url_for("polls_page"))
+
+    @app.get("/calendar")
+    def calendar_page() -> str:
+        ctx = _ctx()
+        config = _calendar_config(ctx)
+        _text, polls, polls_error = _read_polls(ctx)
+        poll_questions = [poll["question"] for poll in polls]
+        scheduler = ctx.get("calendar_scheduler")
+        preview: list[dict[str, Any]] = []
+        preview_error = None
+        if scheduler is not None:
+            try:
+                preview, preview_error = scheduler.preview(limit=12)
+            except Exception as exc:
+                log.exception("calendar preview failed")
+                preview_error = str(exc)
+        return render_template(
+            "calendar.html",
+            active="calendar",
+            calendars=config["calendars"],
+            calendar_names={
+                calendar.get("id"): calendar.get("name")
+                for calendar in config["calendars"]
+            },
+            rules=config["rules"],
+            poll_questions=poll_questions,
+            polls_error=polls_error,
+            preview=preview,
+            preview_error=preview_error,
+        )
+
+    def _save_calendar(config: dict[str, Any]) -> bool:
+        path = _ctx().get("calendar_config_path")
+        if not path:
+            flash("Kalender-Konfiguration ist nicht verfügbar.", "error")
+            return False
+        try:
+            save_calendar_config(path, config)
+        except (OSError, CalendarError) as exc:
+            flash(f"Speichern fehlgeschlagen: {exc}", "error")
+            return False
+        return True
+
+    @app.post("/calendar/add")
+    def add_calendar() -> Any:
+        name = request.form.get("name", "").strip()
+        url = request.form.get("url", "").strip()
+        if not name or not url.lower().startswith(("http://", "https://")):
+            flash(
+                "Name und eine öffentliche http(s)-ICS-URL sind erforderlich.",
+                "error",
+            )
+            return redirect(url_for("calendar_page"))
+        config = _calendar_config(_ctx())
+        config["calendars"].append(
+            {
+                "id": new_calendar_id(),
+                "name": name,
+                "url": url,
+                "enabled": request.form.get("enabled") == "on",
+            }
+        )
+        if _save_calendar(config):
+            flash("Kalender hinzugefügt.", "success")
+        return redirect(url_for("calendar_page"))
+
+    @app.post("/calendar/delete")
+    def delete_calendar() -> Any:
+        calendar_id = request.form.get("id", "")
+        config = _calendar_config(_ctx())
+        before = len(config["calendars"])
+        config["calendars"] = [
+            calendar
+            for calendar in config["calendars"]
+            if calendar.get("id") != calendar_id
+        ]
+        config["rules"] = [
+            rule
+            for rule in config["rules"]
+            if rule.get("calendar_id") != calendar_id
+        ]
+        if len(config["calendars"]) == before:
+            flash("Kalender nicht gefunden.", "error")
+        elif _save_calendar(config):
+            flash("Kalender und zugehörige Regeln gelöscht.", "success")
+        return redirect(url_for("calendar_page"))
+
+    @app.post("/calendar/toggle")
+    def toggle_calendar() -> Any:
+        calendar_id = request.form.get("id", "")
+        config = _calendar_config(_ctx())
+        for calendar in config["calendars"]:
+            if calendar.get("id") == calendar_id:
+                calendar["enabled"] = not calendar.get("enabled", True)
+                _save_calendar(config)
+                break
+        return redirect(url_for("calendar_page"))
+
+    @app.post("/calendar/rule/add")
+    def add_calendar_rule() -> Any:
+        config = _calendar_config(_ctx())
+        calendar_id = request.form.get("calendar_id", "")
+        if not any(
+            calendar.get("id") == calendar_id
+            for calendar in config["calendars"]
+        ):
+            flash("Bitte einen gültigen Kalender auswählen.", "error")
+            return redirect(url_for("calendar_page"))
+
+        match = request.form.get("match", "").strip()
+        group = request.form.get("group", "").strip()
+        if not match or not group:
+            flash("Titel-Match und Gruppe sind erforderlich.", "error")
+            return redirect(url_for("calendar_page"))
+
+        kind = request.form.get("kind", "poll")
+        if kind not in {"poll", "text"}:
+            kind = "poll"
+        text = request.form.get("text", "").strip()
+        if kind == "text" and not text:
+            flash("Für Text-Nachrichten wird ein Text benötigt.", "error")
+            return redirect(url_for("calendar_page"))
+
+        match_type = request.form.get("match_type", "contains")
+        if match_type not in {"contains", "exact", "regex"}:
+            match_type = "contains"
+
+        offset = request.form.get("offset", "20h").strip() or "20h"
+        try:
+            parse_offset(offset)
+        except CalendarError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("calendar_page"))
+
+        poll_questions = [
+            line.strip()
+            for line in request.form.get("poll_questions", "").splitlines()
+            if line.strip()
+        ]
+        config["rules"].append(
+            {
+                "id": new_calendar_id(),
+                "calendar_id": calendar_id,
+                "match": match,
+                "match_type": match_type,
+                "group": group,
+                "kind": kind,
+                "text": text,
+                "poll_questions": poll_questions,
+                "offset": offset,
+                "enabled": request.form.get("enabled") == "on",
+            }
+        )
+        if _save_calendar(config):
+            flash("Regel hinzugefügt.", "success")
+        return redirect(url_for("calendar_page"))
+
+    @app.post("/calendar/rule/delete")
+    def delete_calendar_rule() -> Any:
+        rule_id = request.form.get("id", "")
+        config = _calendar_config(_ctx())
+        before = len(config["rules"])
+        config["rules"] = [
+            rule for rule in config["rules"] if rule.get("id") != rule_id
+        ]
+        if len(config["rules"]) == before:
+            flash("Regel nicht gefunden.", "error")
+        elif _save_calendar(config):
+            flash("Regel gelöscht.", "success")
+        return redirect(url_for("calendar_page"))
+
+    @app.post("/calendar/rule/toggle")
+    def toggle_calendar_rule() -> Any:
+        rule_id = request.form.get("id", "")
+        config = _calendar_config(_ctx())
+        for rule in config["rules"]:
+            if rule.get("id") == rule_id:
+                rule["enabled"] = not rule.get("enabled", True)
+                _save_calendar(config)
+                break
+        return redirect(url_for("calendar_page"))
 
     @app.get("/schedule")
     def schedule_page() -> Any:

@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}Kalender · FVF AH{% endblock %}
+{% block content %}
+<h1>Kalender</h1>
+
+{% if polls_error %}<div class="flash error">{{ polls_error }}</div>{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Kalender</h2>
+  </div>
+  <p class="muted small">
+    Öffentliche Google-Kalender als ICS-Link (…/public/basic.ics). Serien,
+    Ausnahmen (EXDATE) und in Google gelöschte Einzeltermine werden
+    berücksichtigt.
+  </p>
+
+  {% if calendars %}
+    <div class="table-wrap">
+      <table class="preview">
+        <thead>
+          <tr><th>Name</th><th>ICS-URL</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for calendar in calendars %}
+            <tr>
+              <td>{{ calendar.name }}</td>
+              <td class="muted small">{{ calendar.url }}</td>
+              <td>
+                {% if calendar.enabled %}
+                  <span class="ok">aktiv</span>
+                {% else %}
+                  <span class="muted">pausiert</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="form-actions">
+                  <form method="post" action="{{ url_for('toggle_calendar') }}" class="inline-form">
+                    <input type="hidden" name="id" value="{{ calendar.id }}">
+                    <button type="submit" class="secondary small-button">
+                      {% if calendar.enabled %}Pausieren{% else %}Aktivieren{% endif %}
+                    </button>
+                  </form>
+                  <form
+                    method="post"
+                    action="{{ url_for('delete_calendar') }}"
+                    class="inline-form"
+                    onsubmit="return confirm('Kalender und zugehörige Regeln löschen?');"
+                  >
+                    <input type="hidden" name="id" value="{{ calendar.id }}">
+                    <button type="submit" class="secondary small-button">Löschen</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">Noch kein Kalender hinzugefügt.</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('add_calendar') }}" class="schedule-form">
+    <label>Name
+      <input type="text" name="name" required placeholder="AH Training">
+    </label>
+    <label>ICS-URL
+      <input
+        type="url"
+        name="url"
+        required
+        placeholder="https://calendar.google.com/calendar/ical/.../public/basic.ics"
+      >
+    </label>
+    <label class="check"><input type="checkbox" name="enabled" checked> Aktiv</label>
+    <div class="form-actions wide">
+      <button type="submit">Kalender hinzufügen</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Regeln</h2>
+  </div>
+  <p class="muted small">
+    Passt der Termintitel, wird die Nachricht relativ zum Terminbeginn gesendet.
+    Sobald eine aktive Regel existiert, pausiert der bisherige Wochen-Zeitplan
+    automatisch.
+  </p>
+
+  {% if rules %}
+    <div class="table-wrap">
+      <table class="preview">
+        <thead>
+          <tr>
+            <th>Kalender</th>
+            <th>Titel</th>
+            <th>Gruppe</th>
+            <th>Art</th>
+            <th>Vorlauf</th>
+            <th>Inhalt</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rule in rules %}
+            <tr>
+              <td>{{ calendar_names.get(rule.calendar_id) or "—" }}</td>
+              <td>
+                {% if rule.match_type == 'exact' %}= {% endif %}
+                {% if rule.match_type == 'regex' %}~ {% endif %}
+                {{ rule.match }}
+              </td>
+              <td>{{ rule.group }}</td>
+              <td>{% if rule.kind == 'text' %}Text{% else %}Umfrage{% endif %}</td>
+              <td>{{ rule.offset }}</td>
+              <td class="small">
+                {% if rule.kind == 'text' %}
+                  {{ rule.text }}
+                {% elif rule.poll_questions %}
+                  {{ rule.poll_questions | join(' · ') }}
+                {% else %}
+                  <span class="muted">alle aus polls.txt</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if rule.enabled %}
+                  <span class="ok">aktiv</span>
+                {% else %}
+                  <span class="muted">pausiert</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="form-actions">
+                  <form method="post" action="{{ url_for('toggle_calendar_rule') }}" class="inline-form">
+                    <input type="hidden" name="id" value="{{ rule.id }}">
+                    <button type="submit" class="secondary small-button">
+                      {% if rule.enabled %}Pausieren{% else %}Aktivieren{% endif %}
+                    </button>
+                  </form>
+                  <form
+                    method="post"
+                    action="{{ url_for('delete_calendar_rule') }}"
+                    class="inline-form"
+                    onsubmit="return confirm('Regel löschen?');"
+                  >
+                    <input type="hidden" name="id" value="{{ rule.id }}">
+                    <button type="submit" class="secondary small-button">Löschen</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">Noch keine Regel angelegt.</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('add_calendar_rule') }}" class="schedule-form">
+    <label>Kalender
+      <select name="calendar_id" required>
+        {% for calendar in calendars %}
+          <option value="{{ calendar.id }}">{{ calendar.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Titel
+      <input type="text" name="match" required placeholder="AH-Training">
+    </label>
+    <label>Übereinstimmung
+      <select name="match_type">
+        <option value="contains">enthält</option>
+        <option value="exact">exakt</option>
+        <option value="regex">Regex</option>
+      </select>
+    </label>
+    <label>Gruppe
+      <input type="text" name="group" required placeholder="Wer trainiert?">
+    </label>
+    <label>Art
+      <select name="kind">
+        <option value="poll">Umfrage</option>
+        <option value="text">Text</option>
+      </select>
+    </label>
+    <label>Vorlauf (Offset)
+      <input type="text" name="offset" value="20h" required placeholder="20h oder 2d">
+    </label>
+    <label class="wide">Text (nur bei Art „Text“)
+      <textarea name="text" rows="2" placeholder="Nachricht an die Gruppe"></textarea>
+    </label>
+    <label class="wide">
+      Rotationsliste (eine Umfrage pro Zeile; leer = alle aus polls.txt)
+      <textarea name="poll_questions" rows="4" placeholder="Frage 1&#10;Frage 2"></textarea>
+    </label>
+    <label class="check"><input type="checkbox" name="enabled" checked> Aktiv</label>
+    <div class="form-actions wide">
+      <button type="submit">Regel hinzufügen</button>
+    </div>
+  </form>
+
+  {% if poll_questions %}
+    <details>
+      <summary class="muted small">Verfügbare Umfragen aus polls.txt</summary>
+      <ul class="slot-list">
+        {% for question in poll_questions %}
+          <li>{{ question }}</li>
+        {% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Vorschau</h2>
+  </div>
+  {% if preview_error %}
+    <div class="flash error">{{ preview_error }}</div>
+  {% endif %}
+  {% if preview %}
+    <div class="table-wrap">
+      <table class="preview">
+        <thead>
+          <tr>
+            <th>Gesendet am</th>
+            <th>Termin</th>
+            <th>Titel</th>
+            <th>Art</th>
+            <th>Inhalt</th>
+            <th>Gruppe</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in preview %}
+            <tr>
+              <td>{{ item.send_at.strftime('%d.%m.%Y %H:%M') }}</td>
+              <td class="muted small">{{ item.start.strftime('%d.%m.%Y %H:%M') }}</td>
+              <td>{{ item.summary }}</td>
+              <td>{% if item.kind == 'text' %}Text{% else %}Umfrage{% endif %}</td>
+              <td>{{ item.content }}</td>
+              <td class="muted small">{{ item.group }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">Keine anstehenden Sendungen.</p>
+  {% endif %}
+</section>
+{% endblock %}

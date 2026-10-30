@@ -36,6 +36,8 @@ DEFAULT_SCHEDULE_FILE = DEFAULT_DATA_DIR / "schedule.json"
 DEFAULT_SCHEDULE_STATE = DEFAULT_DATA_DIR / "schedule_state.json"
 DEFAULT_POLL_HISTORY = DEFAULT_DATA_DIR / "poll_history.json"
 DEFAULT_CONTACTS = DEFAULT_DATA_DIR / "contacts.json"
+DEFAULT_CALENDARS = DEFAULT_DATA_DIR / "calendars.json"
+DEFAULT_CALENDAR_STATE = DEFAULT_DATA_DIR / "calendar_state.json"
 POLL_HISTORY_LIMIT = 50
 GROUPS_CACHE_SECONDS = 10
 
@@ -557,12 +559,14 @@ class PollScheduler:
         poll_state_path: Path,
         schedule_path: Path,
         schedule_state_path: Path,
+        calendar_config_path: Path | None = None,
     ) -> None:
         self.service = service
         self.polls_path = polls_path
         self.poll_state_path = poll_state_path
         self.schedule_path = schedule_path
         self.schedule_state_path = schedule_state_path
+        self.calendar_config_path = calendar_config_path
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -586,6 +590,17 @@ class PollScheduler:
                 log.exception("scheduler tick failed")
 
     def _tick(self) -> None:
+        if self.calendar_config_path is not None:
+            try:
+                import calendar_sync
+
+                if calendar_sync.calendar_rules_enabled(
+                    self.calendar_config_path
+                ):
+                    return
+            except Exception:
+                log.debug("calendar rule check failed", exc_info=True)
+
         try:
             schedule = load_schedule(self.schedule_path)
         except ValueError as exc:
@@ -1279,11 +1294,24 @@ def serve(args: argparse.Namespace) -> int:
     schedule_state_path = Path(args.schedule_state)
     poll_history_path = Path(args.poll_history)
     contacts_path = Path(args.contacts)
+    calendars_path = Path(args.calendars)
+    calendar_state_path = Path(args.calendar_state)
 
     service = WhatsAppService(
         Path(args.db), Path(args.qr), poll_history_path
     )
     service.start()
+
+    import calendar_sync
+
+    calendar_scheduler = calendar_sync.CalendarScheduler(
+        service,
+        calendars_path,
+        calendar_state_path,
+        polls_path,
+        parse_polls,
+    )
+    calendar_scheduler.start()
 
     scheduler = PollScheduler(
         service,
@@ -1291,6 +1319,7 @@ def serve(args: argparse.Namespace) -> int:
         poll_state_path,
         schedule_path,
         schedule_state_path,
+        calendars_path,
     )
     scheduler.start()
 
@@ -1326,6 +1355,9 @@ def serve(args: argparse.Namespace) -> int:
                     "group_directory": service.group_directory,
                     "group_check": service.group_check,
                     "poll_history_store": service.history,
+                    "calendar_config_path": calendars_path,
+                    "calendar_state_path": calendar_state_path,
+                    "calendar_scheduler": calendar_scheduler,
                     "default_group": os.environ.get("WA_GROUP", ""),
                     "weekdays": WEEKDAYS_DE,
                 },
@@ -1374,6 +1406,7 @@ def serve(args: argparse.Namespace) -> int:
             break
 
     scheduler.stop()
+    calendar_scheduler.stop()
     if web_server is not None:
         web_server.shutdown()
         web_server.server_close()
@@ -1724,6 +1757,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--contacts",
         default=str(DEFAULT_CONTACTS),
         help=f"number to name mapping (default: {DEFAULT_CONTACTS})",
+    )
+    serve_parser.add_argument(
+        "--calendars",
+        default=str(DEFAULT_CALENDARS),
+        help=f"calendar/rule configuration (default: {DEFAULT_CALENDARS})",
+    )
+    serve_parser.add_argument(
+        "--calendar-state",
+        default=str(DEFAULT_CALENDAR_STATE),
+        help=f"calendar send state (default: {DEFAULT_CALENDAR_STATE})",
     )
     serve_parser.add_argument(
         "--web-host",
