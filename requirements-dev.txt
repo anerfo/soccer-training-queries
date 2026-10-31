@@ -3,3 +3,5 @@ ruff>=0.17
 coverage>=7.6
 mypy>=1.10
 vulture>=2.11
+radon>=6.0
+pylint>=3.0

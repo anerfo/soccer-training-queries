@@ -317,7 +317,10 @@ make quality      # lint, format check, type check, tests, coverage
 ```
 
 Individual targets: `make test`, `make lint`, `make format`,
-`make typecheck`, `make coverage`. Configuration lives in `ruff.toml`,
+`make typecheck`, `make coverage`. Quality metrics: `make complexity`
+(Radon cyclomatic complexity), `make maintainability` (Radon MI) and
+`make duplication` (Pylint duplicate code, minimum 8 similar lines).
+`make metrics` runs all three. Configuration lives in `ruff.toml`,
 `mypy.ini` and `.coveragerc`.
 
 ## Troubleshooting

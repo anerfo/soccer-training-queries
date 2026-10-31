@@ -2,8 +2,10 @@ PYTHON ?= .venv/bin/python
 RUFF ?= .venv/bin/ruff
 MYPY ?= .venv/bin/mypy
 COVERAGE ?= .venv/bin/coverage
+RADON ?= .venv/bin/radon
+PYLINT ?= .venv/bin/pylint
 
-.PHONY: install-dev test lint format format-check typecheck coverage quality
+.PHONY: install-dev test lint format format-check typecheck coverage complexity maintainability duplication metrics quality
 
 install-dev:
 	$(PYTHON) -m pip install -r requirements-dev.txt
@@ -27,4 +29,15 @@ coverage:
 	$(COVERAGE) run -m unittest discover -s tests
 	$(COVERAGE) report -m
 
-quality: lint format-check typecheck test coverage
+complexity:
+	$(RADON) cc -s -a wa.py web.py auth.py calendar_sync.py
+
+maintainability:
+	$(RADON) mi -s wa.py web.py auth.py calendar_sync.py
+
+duplication:
+	$(PYLINT) --disable=all --enable=duplicate-code --min-similarity-lines=8 wa.py web.py auth.py calendar_sync.py
+
+metrics: complexity maintainability duplication
+
+quality: lint format-check typecheck test coverage metrics
