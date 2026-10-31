@@ -6,9 +6,10 @@ RADON ?= .venv/bin/radon
 PYLINT ?= .venv/bin/pylint
 BANDIT ?= .venv/bin/bandit
 PIP_AUDIT ?= .venv/bin/pip-audit
+MKDOCS ?= .venv/bin/mkdocs
 SOURCES ?= wa.py soccer
 
-.PHONY: install-dev test lint format format-check typecheck coverage complexity maintainability duplication metrics security quality
+.PHONY: install-dev test lint format format-check typecheck coverage complexity maintainability duplication metrics security docs-serve docs-build quality
 
 install-dev:
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -46,5 +47,11 @@ metrics: complexity maintainability duplication
 security:
 	$(BANDIT) -r $(SOURCES) -q
 	$(PIP_AUDIT) -r requirements.txt
+
+docs-serve:
+	$(MKDOCS) serve
+
+docs-build:
+	$(MKDOCS) build --strict
 
 quality: lint format-check typecheck test coverage metrics security

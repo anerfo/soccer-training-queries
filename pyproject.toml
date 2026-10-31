@@ -27,6 +27,7 @@ dev = [
     "bandit>=1.7",
     "pip-audit>=2.7",
 ]
+docs = ["mkdocs>=1.6"]
 
 [project.scripts]
 soccer-bot = "soccer.daemon:main"

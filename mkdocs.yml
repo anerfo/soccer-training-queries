@@ -1,0 +1,13 @@
+site_name: soccer-training-queries
+site_description: WhatsApp polling bot for a soccer group
+nav:
+  - Overview: index.md
+  - Setup: setup.md
+  - Web UI: web-ui.md
+  - Calendar: calendar.md
+  - Polls & Results: polls.md
+  - Authentication: authentication.md
+  - Security: security.md
+  - CLI & Cron: cli.md
+  - Development: development.md
+  - Troubleshooting: troubleshooting.md
