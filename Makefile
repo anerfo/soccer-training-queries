@@ -30,13 +30,13 @@ coverage:
 	$(COVERAGE) report -m
 
 complexity:
-	$(RADON) cc -s -a wa.py web.py auth.py calendar_sync.py
+	$(RADON) cc -s -a wa.py web.py auth.py calendar_sync.py calendar_data.py calendar_scheduler.py
 
 maintainability:
-	$(RADON) mi -s wa.py web.py auth.py calendar_sync.py
+	$(RADON) mi -s wa.py web.py auth.py calendar_sync.py calendar_data.py calendar_scheduler.py
 
 duplication:
-	$(PYLINT) --disable=all --enable=duplicate-code --min-similarity-lines=8 wa.py web.py auth.py calendar_sync.py
+	$(PYLINT) --disable=all --enable=duplicate-code --min-similarity-lines=8 wa.py web.py auth.py calendar_sync.py calendar_data.py calendar_scheduler.py
 
 metrics: complexity maintainability duplication
 

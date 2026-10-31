@@ -54,7 +54,7 @@ class FetchTests(unittest.TestCase):
 
     def test_html_response_is_rejected_with_short_error(self):
         response = self.Response(b"<!doctype html><html>sign in</html>")
-        with mock.patch("calendar_sync.requests.get", return_value=response):
+        with mock.patch("calendar_data.requests.get", return_value=response):
             with self.assertRaises(calendar_sync.CalendarError) as ctx:
                 calendar_sync.fetch_ics("https://example.com/cal")
         message = str(ctx.exception)
@@ -69,7 +69,7 @@ class FetchTests(unittest.TestCase):
             calls["count"] += 1
             raise calendar_sync.CalendarError("boom")
 
-        with mock.patch("calendar_sync.fetch_ics", side_effect=fail):
+        with mock.patch("calendar_data.fetch_ics", side_effect=fail):
             for _ in range(3):
                 with self.assertRaises(calendar_sync.CalendarError):
                     cache.get("https://example.com/cal")
@@ -181,7 +181,7 @@ class SchedulerTests(unittest.TestCase):
             self.polls_path,
             wa.parse_polls,
         )
-        self.patch = mock.patch("calendar_sync.fetch_ics", return_value=ICS)
+        self.patch = mock.patch("calendar_data.fetch_ics", return_value=ICS)
         self.patch.start()
 
     def tearDown(self):
