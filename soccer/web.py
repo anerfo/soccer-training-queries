@@ -183,6 +183,62 @@ def _shift_month(year: int, month: int, delta: int) -> tuple[int, int, str]:
     return new_year, new_month, f"{new_year:04d}-{new_month:02d}"
 
 
+def _calendar_month_context(
+    ctx: dict[str, Any], year: int, month: int
+) -> dict[str, Any]:
+    scheduler = ctx.get("calendar_scheduler")
+    data: dict[str, Any] = {"events": [], "sends": []}
+    error = None
+    if scheduler is not None:
+        try:
+            data, error = scheduler.month_entries(
+                year,
+                month,
+                os.environ.get("CALENDAR_TIMEZONE", "Europe/Berlin"),
+            )
+        except Exception as exc:
+            log.exception("calendar month view failed")
+            error = str(exc)
+
+    events_by_day: dict[str, list[dict[str, Any]]] = {}
+    sends_by_day: dict[str, list[dict[str, Any]]] = {}
+    for event in data["events"]:
+        events_by_day.setdefault(event["start"].date().isoformat(), []).append(event)
+    for send in data["sends"]:
+        sends_by_day.setdefault(send["send_at"].date().isoformat(), []).append(send)
+
+    today = date.today()
+    weeks = []
+    for week in calendar_module.Calendar(firstweekday=0).monthdatescalendar(
+        year, month
+    ):
+        days = []
+        for day in week:
+            iso = day.isoformat()
+            days.append(
+                {
+                    "date": day,
+                    "in_month": day.month == month,
+                    "today": day == today,
+                    "events": events_by_day.get(iso, []),
+                    "sends": sends_by_day.get(iso, []),
+                }
+            )
+        weeks.append(days)
+
+    _prev_year, _prev_month, prev_value = _shift_month(year, month, -1)
+    _next_year, _next_month, next_value = _shift_month(year, month, 1)
+    return {
+        "weeks": weeks,
+        "year": year,
+        "month_label": MONTHS_DE[month - 1],
+        "month_param": f"{year:04d}-{month:02d}",
+        "prev_month": prev_value,
+        "next_month": next_value,
+        "calendar_error": error,
+    }
+
+
 def _jid_number(jid: str) -> str:
     if not jid:
         return ""
@@ -646,6 +702,16 @@ def create_app(
             except Exception:
                 log.exception("could not determine next poll")
         calendar_config = _calendar_config(ctx)
+        year, month, _month_value = _month_param(request.args.get("month"))
+        calendar_view = _calendar_month_context(ctx, year, month)
+        next_send = None
+        scheduler = ctx.get("calendar_scheduler")
+        if scheduler is not None:
+            try:
+                items, _error = scheduler.preview(limit=1)
+                next_send = items[0] if items else None
+            except Exception:
+                log.exception("calendar preview failed")
         return render_template(
             "index.html",
             active="dashboard",
@@ -658,7 +724,9 @@ def create_app(
             default_group=_default_group(ctx),
             calendar_count=len(calendar_config["calendars"]),
             rule_count=len(calendar_config["rules"]),
+            next_send=next_send,
             has_simulated=any(poll.get("simulated") for poll in _load_history(ctx)),
+            **calendar_view,
         )
 
     @app.post("/simulate")
@@ -1029,70 +1097,6 @@ def create_app(
             polls_error=polls_error,
             preview=preview,
             preview_error=preview_error,
-        )
-
-    @app.get("/calendar/view")
-    def calendar_view_page() -> str:
-        ctx = _ctx()
-        year, month, month_value = _month_param(request.args.get("month"))
-        scheduler = ctx.get("calendar_scheduler")
-        data: dict[str, Any] = {"events": [], "sends": []}
-        error = None
-        if scheduler is not None:
-            try:
-                data, error = scheduler.month_entries(
-                    year,
-                    month,
-                    os.environ.get("CALENDAR_TIMEZONE", "Europe/Berlin"),
-                )
-            except Exception as exc:
-                log.exception("calendar view failed")
-                error = str(exc)
-
-        events_by_day: dict[str, list[dict[str, Any]]] = {}
-        sends_by_day: dict[str, list[dict[str, Any]]] = {}
-        for event in data["events"]:
-            events_by_day.setdefault(event["start"].date().isoformat(), []).append(
-                event
-            )
-        for send in data["sends"]:
-            sends_by_day.setdefault(send["send_at"].date().isoformat(), []).append(send)
-
-        today = date.today()
-        weeks = []
-        for week in calendar_module.Calendar(firstweekday=0).monthdatescalendar(
-            year, month
-        ):
-            days = []
-            for day in week:
-                iso = day.isoformat()
-                days.append(
-                    {
-                        "date": day,
-                        "in_month": day.month == month,
-                        "today": day == today,
-                        "events": events_by_day.get(iso, []),
-                        "sends": sends_by_day.get(iso, []),
-                    }
-                )
-            weeks.append(days)
-
-        _prev_year, _prev_month, prev_value = _shift_month(year, month, -1)
-        _next_year, _next_month, next_value = _shift_month(year, month, 1)
-        config = _calendar_config(ctx)
-        return render_template(
-            "calendar_view.html",
-            active="calendar",
-            weeks=weeks,
-            year=year,
-            month=month,
-            month_label=MONTHS_DE[month - 1],
-            month_param=month_value,
-            prev_month=prev_value,
-            next_month=next_value,
-            error=error,
-            calendar_count=len(config["calendars"]),
-            rule_count=len(config["rules"]),
         )
 
     def _save_calendar(config: dict[str, Any]) -> bool:

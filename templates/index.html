@@ -23,6 +23,18 @@
   </div>
 
   <div class="card">
+    <span class="label">Nächste Nachricht</span>
+    {% if next_send %}
+      <strong class="ok">{{ next_send.send_at.strftime('%d.%m.%Y %H:%M') }}</strong>
+      <small>{% if next_send.kind == 'poll' %}Umfrage{% else %}Text{% endif %} · {{ next_send.group }}</small>
+      <small>{{ next_send.summary }}</small>
+      <small class="muted">{{ next_send.content }}</small>
+    {% else %}
+      <strong class="muted">Keine geplant</strong>
+    {% endif %}
+  </div>
+
+  <div class="card">
     <span class="label">Umfragen</span>
     <strong>{{ poll_count }}</strong>
     <small><a href="{{ url_for('polls_page') }}">Liste bearbeiten</a></small>
@@ -98,6 +110,8 @@
 })();
 </script>
 {% endif %}
+
+{% include "_calendar_view.html" %}
 
 <section class="panel">
   <div class="panel-head">

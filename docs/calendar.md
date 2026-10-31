@@ -23,9 +23,9 @@ last-minute deletions.
 ## Preview and calendar view
 
 The **Vorschau** table on the calendar page shows the upcoming sends and the
-poll rotation. The **Kalenderansicht** (`/calendar/view`) renders a monthly
-grid with calendar events and planned/sent messages; clicking an entry opens a
-detail dialog.
+poll rotation. The monthly **Kalenderansicht** is embedded on the
+**Übersicht** (`/#calendar`); it shows calendar events and planned/sent
+messages, and clicking an entry opens a detail dialog.
 
 Calendar configuration lives in `data/calendars.json`; send state (including
 sent-message history) lives in `data/calendar_state.json`.

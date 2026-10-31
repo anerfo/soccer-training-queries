@@ -6,8 +6,9 @@ address.
 
 The UI has these pages:
 
-- **Übersicht** — connection status, a preview of the next poll, calendar
-  counts and a "send now" button.
+- **Übersicht** — connection status and time of the next planned message, a
+  monthly calendar with events and planned/sent messages, a preview of the
+  next poll, calendar counts and a "send now" button.
 - **Umfragen** — edit `polls.txt` in the browser. The list is validated before
   saving and a preview is shown below the editor.
 - **Ergebnisse** — browse the most recently sent polls, see who accepted and
@@ -18,7 +19,8 @@ The UI has these pages:
   The WhatsApp display name (push name) is shown under each number as a hint.
   The mapping lives in `data/contacts.json`.
 - **Kalender** — attach public Google Calendar ICS feeds and send WhatsApp
-  messages/polls relative to events. See [Calendar](calendar.md).
+  messages/polls relative to events. The calendar view is shown on the
+  Übersicht. See [Calendar](calendar.md).
 
 The UI works on mobile too; the navigation collapses into a burger menu.
 

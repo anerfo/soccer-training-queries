@@ -3,7 +3,7 @@
 {% block content %}
 <div class="panel-head">
   <h1>Kalender</h1>
-  <a class="button secondary" href="{{ url_for('calendar_view_page') }}">Kalenderansicht</a>
+  <a class="button secondary" href="{{ url_for('index') }}#calendar">Kalenderansicht</a>
 </div>
 
 {% if polls_error %}<div class="flash error">{{ polls_error }}</div>{% endif %}

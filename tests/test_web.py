@@ -120,7 +120,6 @@ class WebTests(unittest.TestCase):
             "/votes",
             "/contacts",
             "/calendar",
-            "/calendar/view",
             "/api/status",
         ):
             response = self.client.get(path)
@@ -172,12 +171,41 @@ class WebTests(unittest.TestCase):
         ctx = dict(self.ctx)
         ctx["calendar_scheduler"] = Scheduler()
         client = create_app(self.service, ctx).test_client()
-        html = client.get("/calendar/view?month=2026-11").get_data(as_text=True)
-        self.assertIn("Kalenderansicht", html)
+        html = client.get("/?month=2026-11").get_data(as_text=True)
+        self.assertIn("Kalender", html)
         self.assertIn("Training", html)
         self.assertIn("Dabei?", html)
         self.assertIn("data-detail", html)
         self.assertIn('id="detail-dialog"', html)
+
+    def test_index_shows_next_planned_message(self):
+        from datetime import UTC, datetime
+
+        class Scheduler:
+            def preview(self, now=None, limit=12):
+                return [
+                    {
+                        "send_at": datetime(2026, 11, 3, 23, tzinfo=UTC),
+                        "start": datetime(2026, 11, 4, 19, tzinfo=UTC),
+                        "summary": "Training",
+                        "kind": "poll",
+                        "content": "Dabei?",
+                        "group": "Gruppe",
+                    }
+                ], None
+
+            def month_entries(
+                self, year, month, timezone_name="Europe/Berlin", now=None
+            ):
+                return {"events": [], "sends": []}, None
+
+        ctx = dict(self.ctx)
+        ctx["calendar_scheduler"] = Scheduler()
+        client = create_app(self.service, ctx).test_client()
+        html = client.get("/").get_data(as_text=True)
+        self.assertIn("03.11.2026 23:00", html)
+        self.assertIn("Dabei?", html)
+        self.assertIn("Gruppe", html)
 
     def test_security_headers(self):
         response = self.client.get("/health")
