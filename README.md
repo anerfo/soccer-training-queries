@@ -320,8 +320,23 @@ Individual targets: `make test`, `make lint`, `make format`,
 `make typecheck`, `make coverage`. Quality metrics: `make complexity`
 (Radon cyclomatic complexity), `make maintainability` (Radon MI) and
 `make duplication` (Pylint duplicate code, minimum 8 similar lines).
-`make metrics` runs all three. Configuration lives in `ruff.toml`,
-`mypy.ini` and `.coveragerc`.
+`make metrics` runs all three. `make security` runs Bandit and pip-audit.
+Configuration lives in `ruff.toml`, `mypy.ini` and `.coveragerc`.
+
+## Security
+
+- OIDC tokens are validated (issuer, audience, signature, expiry, nonce);
+  sessions use HttpOnly/SameSite cookies. With an HTTPS redirect URI the
+  session cookie is marked `Secure` automatically.
+- Incomplete OIDC configuration fails closed (requests are rejected)
+  rather than silently disabling authentication.
+- Calendar URLs are fetched with SSRF protection: no private, loopback,
+  link-local or metadata addresses, and redirects are re-validated.
+  Set `CALENDAR_ALLOW_PRIVATE=1` only for intentional local feeds.
+- Responses include CSP, X-Frame-Options, X-Content-Type-Options,
+  Referrer-Policy and Permissions-Policy; HSTS is added for Secure
+  cookies.
+- Run `make security` (Bandit + pip-audit) before deploying.
 
 ## Troubleshooting
 

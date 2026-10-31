@@ -326,7 +326,7 @@ def choose_poll(
             index = 0
         else:
             candidates = [index for index in range(len(polls)) if index != last_index]
-            index = random.choice(candidates)
+            index = random.choice(candidates)  # nosec B311
     else:
         index = 0 if last_index is None else (last_index + 1) % len(polls)
     return index, polls[index]

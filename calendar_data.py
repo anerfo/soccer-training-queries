@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import re
+import socket
 import threading
 import time
 import uuid
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin, urlsplit
 
 import icalendar
 import recurring_ical_events
@@ -22,6 +25,9 @@ LOOKAHEAD_DAYS = 35
 GRACE_MINUTES = 60
 STATE_RETENTION_DAYS = 90
 DEFAULT_CALENDAR_TIMEZONE = "Europe/Berlin"
+ALLOW_PRIVATE_CALENDARS = os.environ.get(
+    "CALENDAR_ALLOW_PRIVATE", ""
+).strip().lower() in {"1", "true", "yes", "on"}
 
 _OFFSET_RE = re.compile(
     r"^\s*(\d+(?:[.,]\d+)?)\s*"
@@ -118,27 +124,97 @@ def match_event(rule: dict[str, Any], summary: str) -> bool:
     return pattern.casefold() in summary.casefold()
 
 
-def fetch_ics(url: str, timeout: float = 15.0) -> bytes:
+def _is_public_host(host: str) -> bool:
     try:
-        response = requests.get(
-            url,
-            timeout=timeout,
-            headers={
-                "User-Agent": "whatsapp-agent-calendar/1.0",
-                "Accept": "text/calendar, text/plain;q=0.8, */*;q=0.5",
-            },
-        )
-    except Exception as exc:
-        raise CalendarError(f"could not fetch calendar: {type(exc).__name__}") from exc
-    if response.status_code >= 400:
-        raise CalendarError(f"calendar URL returned HTTP {response.status_code}")
-    body = response.content
-    if b"begin:vcalendar" not in body[:1024].lower():
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return False
+    return True
+
+
+def validate_calendar_url(url: str) -> None:
+    """Reject non-http(s), private, loopback and metadata calendar URLs."""
+    parts = urlsplit(str(url or ""))
+    if parts.scheme not in {"http", "https"}:
+        raise CalendarError("calendar URL must use http or https")
+    host = parts.hostname
+    if not host:
+        raise CalendarError("calendar URL has no host")
+    if ALLOW_PRIVATE_CALENDARS:
+        return
+    try:
+        literal = ipaddress.ip_address(host)
+    except ValueError:
+        literal = None
+    if literal is not None:
+        if (
+            literal.is_private
+            or literal.is_loopback
+            or literal.is_link_local
+            or literal.is_reserved
+            or literal.is_multicast
+            or literal.is_unspecified
+        ):
+            raise CalendarError(
+                "calendar URL resolves to a private or reserved address"
+            )
+        return
+    if not _is_public_host(host):
         raise CalendarError(
-            "URL did not return iCalendar data; use the public or secret "
-            "Google Calendar address ending in /basic.ics"
+            "calendar URL resolves to a private or invalid address "
+            "(set CALENDAR_ALLOW_PRIVATE=1 to allow local feeds)"
         )
-    return body
+
+
+def fetch_ics(url: str, timeout: float = 15.0) -> bytes:
+    current = str(url)
+    headers = {
+        "User-Agent": "whatsapp-agent-calendar/1.0",
+        "Accept": "text/calendar, text/plain;q=0.8, */*;q=0.5",
+    }
+    for _ in range(5):
+        validate_calendar_url(current)
+        try:
+            response = requests.get(
+                current,
+                timeout=timeout,
+                headers=headers,
+                allow_redirects=False,
+            )
+        except Exception as exc:
+            raise CalendarError(
+                f"could not fetch calendar: {type(exc).__name__}"
+            ) from exc
+        if 300 <= response.status_code < 400:
+            location = response.headers.get("Location")
+            if not location:
+                raise CalendarError("calendar redirect has no Location header")
+            current = urljoin(current, location)
+            continue
+        if response.status_code >= 400:
+            raise CalendarError(f"calendar URL returned HTTP {response.status_code}")
+        body = response.content
+        if b"begin:vcalendar" not in body[:1024].lower():
+            raise CalendarError(
+                "URL did not return iCalendar data; use the public or secret "
+                "Google Calendar address ending in /basic.ics"
+            )
+        return body
+    raise CalendarError("calendar URL redirected too many times")
 
 
 def expand_events(

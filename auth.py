@@ -278,7 +278,10 @@ class OIDCLogin:
             raise InvalidToken("nonce mismatch")
         return claims
 
-    def logout_url(self, id_token: str = "", post_logout_redirect_uri: str = "") -> str:
+    # B107 false positive: id_token is not a password.
+    def logout_url(  # nosec B107
+        self, id_token: str = "", post_logout_redirect_uri: str = ""
+    ) -> str:
         try:
             endpoint = self.discovery().get("end_session_endpoint")
         except AuthError:
@@ -359,6 +362,13 @@ def build_auth_from_env() -> AuthGate | None:
         log.warning("AUTH_DISABLED is set; web/API authentication is turned off")
         return None
     if not config.configured:
+        partial = bool(config.issuer or config.client_id or config.client_secret)
+        if partial:
+            log.error(
+                "Incomplete OIDC configuration (set OIDC_ISSUER and "
+                "OIDC_CLIENT_ID); failing closed and rejecting all requests"
+            )
+            return AuthGate(config)
         log.warning(
             "OIDC is not configured (set OIDC_ISSUER and OIDC_CLIENT_ID); "
             "web/API authentication is turned off"

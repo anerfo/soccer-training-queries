@@ -4,8 +4,10 @@ MYPY ?= .venv/bin/mypy
 COVERAGE ?= .venv/bin/coverage
 RADON ?= .venv/bin/radon
 PYLINT ?= .venv/bin/pylint
+BANDIT ?= .venv/bin/bandit
+PIP_AUDIT ?= .venv/bin/pip-audit
 
-.PHONY: install-dev test lint format format-check typecheck coverage complexity maintainability duplication metrics quality
+.PHONY: install-dev test lint format format-check typecheck coverage complexity maintainability duplication metrics security quality
 
 install-dev:
 	$(PYTHON) -m pip install -r requirements-dev.txt
@@ -40,4 +42,8 @@ duplication:
 
 metrics: complexity maintainability duplication
 
-quality: lint format-check typecheck test coverage metrics
+security:
+	$(BANDIT) -r wa.py web.py auth.py calendar_sync.py calendar_data.py calendar_scheduler.py -q
+	$(PIP_AUDIT) -r requirements.txt
+
+quality: lint format-check typecheck test coverage metrics security

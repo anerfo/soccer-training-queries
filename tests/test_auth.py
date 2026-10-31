@@ -173,6 +173,14 @@ class BuildAuthFromEnvTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertIsNone(auth.build_auth_from_env())
 
+    def test_partial_config_fails_closed(self):
+        with mock.patch.dict(os.environ, {"OIDC_ISSUER": ISSUER}, clear=True):
+            gate = auth.build_auth_from_env()
+            self.assertIsNotNone(gate)
+            self.assertTrue(gate.enabled)
+            with self.assertRaises(auth.MissingToken):
+                gate.check({})
+
     def test_configured_returns_gate(self):
         env = {"OIDC_ISSUER": ISSUER, "OIDC_CLIENT_ID": AUDIENCE}
         with mock.patch.dict(os.environ, env, clear=True):

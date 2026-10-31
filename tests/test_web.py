@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 import wa
-from web import create_app
+from web import _safe_next, create_app
 
 
 class FakeCalendarScheduler:
@@ -50,6 +50,22 @@ class FakeService:
             "message_id": "msg-id",
             "timestamp": 1,
         }
+
+
+class SafeNextTests(unittest.TestCase):
+    def test_allows_local_paths(self):
+        self.assertEqual(_safe_next("/votes?i=1"), "/votes?i=1")
+
+    def test_rejects_external_and_ambiguous_targets(self):
+        for value in (
+            "https://evil.example",
+            "//evil.example",
+            "/\\evil.example",
+            "/\r\nX-Injected: yes",
+            "javascript:alert(1)",
+            "",
+        ):
+            self.assertEqual(_safe_next(value), "")
 
 
 class WebTests(unittest.TestCase):
@@ -168,6 +184,18 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(response.headers["X-Frame-Options"], "DENY")
         self.assertEqual(response.headers["Referrer-Policy"], "same-origin")
+
+    def test_secure_cookie_from_https_redirect_uri(self):
+        from auth import AuthGate, OIDCConfig
+
+        config = OIDCConfig(
+            issuer="https://auth.example.com",
+            audience="app",
+            client_id="app",
+            redirect_uri="https://app.example.com/auth/callback",
+        )
+        app = create_app(self.service, self.ctx, AuthGate(config))
+        self.assertTrue(app.config["SESSION_COOKIE_SECURE"])
 
     def test_oversized_requests_are_rejected(self):
         response = self.client.post(

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
+import calendar_data
 import calendar_sync
 import wa
 
@@ -51,10 +52,14 @@ class FetchTests(unittest.TestCase):
         def __init__(self, body, status=200):
             self.content = body
             self.status_code = status
+            self.headers = {}
 
     def test_html_response_is_rejected_with_short_error(self):
         response = self.Response(b"<!doctype html><html>sign in</html>")
-        with mock.patch("calendar_data.requests.get", return_value=response):
+        with (
+            mock.patch("calendar_data.validate_calendar_url"),
+            mock.patch("calendar_data.requests.get", return_value=response),
+        ):
             with self.assertRaises(calendar_sync.CalendarError) as ctx:
                 calendar_sync.fetch_ics("https://example.com/cal")
         message = str(ctx.exception)
@@ -74,6 +79,25 @@ class FetchTests(unittest.TestCase):
                 with self.assertRaises(calendar_sync.CalendarError):
                     cache.get("https://example.com/cal")
         self.assertEqual(calls["count"], 1)
+
+
+class CalendarUrlValidationTests(unittest.TestCase):
+    def test_rejects_private_loopback_and_metadata_addresses(self):
+        for url in (
+            "http://127.0.0.1/cal.ics",
+            "http://169.254.169.254/latest/meta-data",
+            "http://[::1]/cal.ics",
+            "ftp://example.com/cal.ics",
+        ):
+            with self.assertRaises(calendar_sync.CalendarError):
+                calendar_data.validate_calendar_url(url)
+
+    def test_allows_private_when_explicitly_enabled(self):
+        with mock.patch.object(calendar_data, "ALLOW_PRIVATE_CALENDARS", True):
+            calendar_data.validate_calendar_url("http://127.0.0.1/cal.ics")
+
+    def test_allows_public_ip_literals(self):
+        calendar_data.validate_calendar_url("https://1.1.1.1/cal.ics")
 
 
 class OffsetTests(unittest.TestCase):

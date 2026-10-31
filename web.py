@@ -369,7 +369,11 @@ def _safe_next(value: str | None) -> str:
     if not value:
         return ""
     candidate = value.strip()
-    if not candidate.startswith("/") or candidate.startswith("//"):
+    if not candidate.startswith("/"):
+        return ""
+    if candidate.startswith("//") or "\\" in candidate:
+        return ""
+    if any(ord(char) < 32 for char in candidate):
         return ""
     parts = urlsplit(candidate)
     if parts.scheme or parts.netloc:
@@ -385,13 +389,24 @@ def create_app(
     app = Flask(__name__)
     app.secret_key = os.environ.get("SESSION_SECRET") or os.urandom(32)
     app.config["CTX"] = ctx
+
+    if auth is _AUTH_UNSET:
+        auth = build_auth_from_env()
+
+    secure_cookie = os.environ.get("SESSION_COOKIE_SECURE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not secure_cookie and auth is not None:
+        redirect_uri = getattr(auth.config, "redirect_uri", "")
+        secure_cookie = str(redirect_uri).startswith("https://")
+
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
-        SESSION_COOKIE_SECURE=os.environ.get("SESSION_COOKIE_SECURE", "")
-        .strip()
-        .lower()
-        in {"1", "true", "yes", "on"},
+        SESSION_COOKIE_SECURE=secure_cookie,
         MAX_CONTENT_LENGTH=2 * 1024 * 1024,
     )
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
@@ -401,10 +416,19 @@ def create_app(
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "same-origin")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; img-src 'self' data:; "
+            "style-src 'self' 'unsafe-inline'; "
+            "script-src 'self' 'unsafe-inline'; object-src 'none'; "
+            "base-uri 'none'; frame-ancestors 'none'",
+        )
+        response.headers.setdefault(
+            "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+        )
+        if app.config.get("SESSION_COOKIE_SECURE"):
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
         return response
-
-    if auth is _AUTH_UNSET:
-        auth = build_auth_from_env()
 
     @app.context_processor
     def _inject_auth() -> dict[str, Any]:
@@ -641,7 +665,7 @@ def create_app(
         _text, polls, error = _read_polls(ctx)
         if error or not polls:
             polls = [SIMULATION_FALLBACK_POLL]
-        source = random.choice(polls)
+        source = random.choice(polls)  # nosec B311
         options = source["options"]
 
         message_id = f"sim-{uuid.uuid4().hex[:12]}"
@@ -657,9 +681,9 @@ def create_app(
             simulated=True,
         )
 
-        count = random.randint(6, min(12, len(SIMULATION_PEOPLE)))
-        for number, name in random.sample(SIMULATION_PEOPLE, count):
-            choice = random.choice(options)
+        count = random.randint(6, min(12, len(SIMULATION_PEOPLE)))  # nosec B311
+        for number, name in random.sample(SIMULATION_PEOPLE, count):  # nosec B311
+            choice = random.choice(options)  # nosec B311
             store.record_vote(
                 poll_id=message_id,
                 chat="simulation@g.us",
