@@ -308,12 +308,24 @@ Stop the daemon with `Ctrl+C` (foreground) or:
 pkill -f 'wa.py serve'
 ```
 
+## Project layout
+
+- `wa.py` — CLI entrypoint (also `python -m soccer` / `soccer-bot`)
+- `soccer/daemon.py` — daemon, Unix socket server and CLI commands
+- `soccer/web.py` — Flask app and pages
+- `soccer/auth.py` — OIDC authentication
+- `soccer/calendar/` — iCalendar data (`data.py`) and scheduler
+- `templates/`, `static/`, `tests/` — UI assets and tests
+
+Set `APP_HOME` if the package is installed outside the source tree so it
+can find `polls.txt`, `templates/` and `static/`.
+
 ## Development
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements-dev.txt
-make quality      # lint, format check, type check, tests, coverage
+.venv/bin/pip install -e ".[dev]"
+make quality      # lint, format check, type check, tests, coverage, security
 ```
 
 Individual targets: `make test`, `make lint`, `make format`,
@@ -321,7 +333,8 @@ Individual targets: `make test`, `make lint`, `make format`,
 (Radon cyclomatic complexity), `make maintainability` (Radon MI) and
 `make duplication` (Pylint duplicate code, minimum 8 similar lines).
 `make metrics` runs all three. `make security` runs Bandit and pip-audit.
-Configuration lives in `ruff.toml`, `mypy.ini` and `.coveragerc`.
+All tool configuration (Ruff, Mypy, Coverage, project metadata and the
+`dev` extra) lives in `pyproject.toml`.
 
 ## Security
 

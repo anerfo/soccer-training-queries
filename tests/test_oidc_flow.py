@@ -10,9 +10,9 @@ from urllib.parse import parse_qs, urlparse
 import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-import wa
-from auth import AuthGate, OIDCConfig
-from web import create_app
+from soccer import daemon as wa
+from soccer.auth import AuthGate, OIDCConfig
+from soccer.web import create_app
 
 PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 PUBLIC_JWK = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(PRIVATE_KEY.public_key()))

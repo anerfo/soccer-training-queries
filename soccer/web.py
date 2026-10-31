@@ -12,6 +12,7 @@ import threading
 import time
 import uuid
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit
 
@@ -32,13 +33,13 @@ from flask import (
 )
 from markupsafe import escape
 
-from auth import (
+from .auth import (
     InvalidToken,
     MissingToken,
     build_auth_from_env,
     new_pkce_pair,
 )
-from calendar_sync import (
+from .calendar import (
     CalendarError,
     load_calendar_config,
     new_id,
@@ -60,6 +61,8 @@ MONTHS_DE = (
     "November",
     "Dezember",
 )
+
+BASE_DIR = Path(os.environ.get("APP_HOME") or Path(__file__).resolve().parent.parent)
 
 log = logging.getLogger("wa.web")
 
@@ -386,7 +389,11 @@ def create_app(
     ctx: dict[str, Any],
     auth: Any = _AUTH_UNSET,
 ) -> Flask:
-    app = Flask(__name__)
+    app = Flask(
+        __name__,
+        template_folder=str(BASE_DIR / "templates"),
+        static_folder=str(BASE_DIR / "static"),
+    )
     app.secret_key = os.environ.get("SESSION_SECRET") or os.urandom(32)
     app.config["CTX"] = ctx
 

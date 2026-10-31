@@ -23,7 +23,8 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip setuptools \
     && pip install --no-cache-dir -r requirements.txt
 
-COPY --chown=app:app wa.py web.py auth.py calendar_sync.py calendar_data.py calendar_scheduler.py polls.txt README.md ./
+COPY --chown=app:app wa.py polls.txt README.md ./
+COPY --chown=app:app soccer ./soccer
 COPY --chown=app:app templates ./templates
 COPY --chown=app:app static ./static
 RUN mkdir -p /app/data && chown app:app /app/data

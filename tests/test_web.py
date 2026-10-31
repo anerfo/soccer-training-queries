@@ -5,8 +5,8 @@ import time
 import unittest
 from pathlib import Path
 
-import wa
-from web import _safe_next, create_app
+from soccer import daemon as wa
+from soccer.web import _safe_next, create_app
 
 
 class FakeCalendarScheduler:
@@ -186,7 +186,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.headers["Referrer-Policy"], "same-origin")
 
     def test_secure_cookie_from_https_redirect_uri(self):
-        from auth import AuthGate, OIDCConfig
+        from soccer.auth import AuthGate, OIDCConfig
 
         config = OIDCConfig(
             issuer="https://auth.example.com",
@@ -336,7 +336,7 @@ class WebTests(unittest.TestCase):
         self.assertIn("Bert", html)
 
     def _gate(self):
-        from auth import AuthGate, OIDCConfig
+        from soccer.auth import AuthGate, OIDCConfig
 
         class Validator:
             def validate(self, _token, audience=None):
@@ -380,7 +380,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(client.get("/").status_code, 200)
 
     def test_invalid_token_returns_401(self):
-        from auth import AuthGate, InvalidToken, OIDCConfig
+        from soccer.auth import AuthGate, InvalidToken, OIDCConfig
 
         class Validator:
             def validate(self, _token, audience=None):
@@ -412,7 +412,7 @@ class WebTests(unittest.TestCase):
         self.assertTrue(response.headers["Location"].startswith("/login"))
 
     def test_login_redirects_to_provider_with_state(self):
-        from auth import AuthGate, OIDCConfig
+        from soccer.auth import AuthGate, OIDCConfig
 
         class FakeLogin:
             def authorization_url(self, **kwargs):

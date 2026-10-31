@@ -7,7 +7,7 @@ import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-import auth
+from soccer import auth
 
 ISSUER = "https://auth.example.com"
 AUDIENCE = "whatsapp-agent"

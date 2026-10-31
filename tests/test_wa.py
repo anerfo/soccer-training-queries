@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import wa
-from wa import (
+from soccer import daemon as wa
+from soccer.daemon import (
     choose_poll,
     cmd_poll_next,
     match_group,
@@ -127,7 +127,7 @@ class ChoosePollTests(unittest.TestCase):
         self.assertEqual(index, 0)
 
     def test_random_skips_last_index(self):
-        with mock.patch("wa.random.choice", return_value=2) as choice:
+        with mock.patch("soccer.daemon.random.choice", return_value=2) as choice:
             index, _poll = choose_poll(self.polls, {"last_index": 0}, True)
         self.assertEqual(index, 2)
         self.assertEqual(choice.call_args.args[0], [1, 2])
@@ -168,7 +168,7 @@ class PollNextCommandTests(unittest.TestCase):
             "jid": "1@g.us",
             "message_id": "id",
         }
-        with mock.patch("wa._request", return_value=response):
+        with mock.patch("soccer.daemon._request", return_value=response):
             return cmd_poll_next(args)
 
     def test_advances_through_list_and_wraps(self):
@@ -184,7 +184,9 @@ class PollNextCommandTests(unittest.TestCase):
         self.assertFalse(self.state_file.exists())
 
     def test_failed_send_does_not_advance(self):
-        with mock.patch("wa._request", return_value={"ok": False, "error": "nope"}):
+        with mock.patch(
+            "soccer.daemon._request", return_value={"ok": False, "error": "nope"}
+        ):
             args = argparse.Namespace(
                 group="Group",
                 file=str(self.poll_file),

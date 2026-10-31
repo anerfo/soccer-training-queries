@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
-import calendar_data
-import calendar_sync
-import wa
+import soccer.calendar as calendar_sync
+from soccer import daemon as wa
+from soccer.calendar import data as calendar_data
 
 ICS = b"""BEGIN:VCALENDAR
 VERSION:2.0
@@ -57,8 +57,8 @@ class FetchTests(unittest.TestCase):
     def test_html_response_is_rejected_with_short_error(self):
         response = self.Response(b"<!doctype html><html>sign in</html>")
         with (
-            mock.patch("calendar_data.validate_calendar_url"),
-            mock.patch("calendar_data.requests.get", return_value=response),
+            mock.patch("soccer.calendar.data.validate_calendar_url"),
+            mock.patch("soccer.calendar.data.requests.get", return_value=response),
         ):
             with self.assertRaises(calendar_sync.CalendarError) as ctx:
                 calendar_sync.fetch_ics("https://example.com/cal")
@@ -74,7 +74,7 @@ class FetchTests(unittest.TestCase):
             calls["count"] += 1
             raise calendar_sync.CalendarError("boom")
 
-        with mock.patch("calendar_data.fetch_ics", side_effect=fail):
+        with mock.patch("soccer.calendar.data.fetch_ics", side_effect=fail):
             for _ in range(3):
                 with self.assertRaises(calendar_sync.CalendarError):
                     cache.get("https://example.com/cal")
@@ -205,7 +205,7 @@ class SchedulerTests(unittest.TestCase):
             self.polls_path,
             wa.parse_polls,
         )
-        self.patch = mock.patch("calendar_data.fetch_ics", return_value=ICS)
+        self.patch = mock.patch("soccer.calendar.data.fetch_ics", return_value=ICS)
         self.patch.start()
 
     def tearDown(self):

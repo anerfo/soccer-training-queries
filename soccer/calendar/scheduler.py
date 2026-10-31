@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from calendar_data import (
+from .data import (
     DEFAULT_CALENDAR_TIMEZONE,
     ERROR_CACHE_SECONDS,
     GRACE_MINUTES,

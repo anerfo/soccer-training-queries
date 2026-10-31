@@ -1,6 +1,6 @@
-"""Backward-compatible calendar API (data + scheduler)."""
+"""Calendar data (ICS/config/cache) and scheduling."""
 
-from calendar_data import (
+from .data import (
     CACHE_SECONDS,
     DEFAULT_CALENDAR_TIMEZONE,
     ERROR_CACHE_SECONDS,
@@ -18,8 +18,9 @@ from calendar_data import (
     parse_offset,
     save_calendar_config,
     save_calendar_state,
+    validate_calendar_url,
 )
-from calendar_scheduler import CalendarScheduler
+from .scheduler import CalendarScheduler
 
 __all__ = [
     "CACHE_SECONDS",
@@ -40,4 +41,5 @@ __all__ = [
     "parse_offset",
     "save_calendar_config",
     "save_calendar_state",
+    "validate_calendar_url",
 ]

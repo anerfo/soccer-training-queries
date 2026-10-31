@@ -6,11 +6,12 @@ RADON ?= .venv/bin/radon
 PYLINT ?= .venv/bin/pylint
 BANDIT ?= .venv/bin/bandit
 PIP_AUDIT ?= .venv/bin/pip-audit
+SOURCES ?= wa.py soccer
 
 .PHONY: install-dev test lint format format-check typecheck coverage complexity maintainability duplication metrics security quality
 
 install-dev:
-	$(PYTHON) -m pip install -r requirements-dev.txt
+	$(PYTHON) -m pip install -e ".[dev]"
 
 test:
 	$(PYTHON) -m unittest discover -s tests
@@ -32,18 +33,18 @@ coverage:
 	$(COVERAGE) report -m
 
 complexity:
-	$(RADON) cc -s -a wa.py web.py auth.py calendar_sync.py calendar_data.py calendar_scheduler.py
+	$(RADON) cc -s -a $(SOURCES)
 
 maintainability:
-	$(RADON) mi -s wa.py web.py auth.py calendar_sync.py calendar_data.py calendar_scheduler.py
+	$(RADON) mi -s $(SOURCES)
 
 duplication:
-	$(PYLINT) --disable=all --enable=duplicate-code --min-similarity-lines=8 wa.py web.py auth.py calendar_sync.py calendar_data.py calendar_scheduler.py
+	$(PYLINT) --disable=all --enable=duplicate-code --min-similarity-lines=8 $(SOURCES)
 
 metrics: complexity maintainability duplication
 
 security:
-	$(BANDIT) -r wa.py web.py auth.py calendar_sync.py calendar_data.py calendar_scheduler.py -q
+	$(BANDIT) -r $(SOURCES) -q
 	$(PIP_AUDIT) -r requirements.txt
 
 quality: lint format-check typecheck test coverage metrics security
