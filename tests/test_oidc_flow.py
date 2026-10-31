@@ -15,9 +15,7 @@ from auth import AuthGate, OIDCConfig
 from web import create_app
 
 PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-PUBLIC_JWK = json.loads(
-    jwt.algorithms.RSAAlgorithm.to_jwk(PRIVATE_KEY.public_key())
-)
+PUBLIC_JWK = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(PRIVATE_KEY.public_key()))
 PUBLIC_JWK["kid"] = "test-key"
 PUBLIC_JWK["alg"] = "RS256"
 PUBLIC_JWK["use"] = "sig"
@@ -120,9 +118,7 @@ class FakeService:
 class OIDCLoginFlowTests(unittest.TestCase):
     def setUp(self):
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), _Provider)
-        self.thread = threading.Thread(
-            target=self.server.serve_forever, daemon=True
-        )
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         port = self.server.server_address[1]
         self.issuer = f"http://127.0.0.1:{port}"
@@ -166,9 +162,7 @@ class OIDCLoginFlowTests(unittest.TestCase):
             state = sess["_oidc_state"]
             SHARED["nonce"] = sess["_oidc_nonce"]
 
-        response = self.client.get(
-            f"/auth/callback?code=test-code&state={state}"
-        )
+        response = self.client.get(f"/auth/callback?code=test-code&state={state}")
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], "/")
 
@@ -194,9 +188,7 @@ class OIDCLoginFlowTests(unittest.TestCase):
         response = self.client.get("/logout")
         self.assertEqual(response.status_code, 302)
         self.assertTrue(
-            response.headers["Location"].startswith(
-                self.issuer + "/logout?rd="
-            )
+            response.headers["Location"].startswith(self.issuer + "/logout?rd=")
         )
 
     def test_logout_redirects_to_configured_logout_url(self):
@@ -207,9 +199,7 @@ class OIDCLoginFlowTests(unittest.TestCase):
             redirect_uri="http://localhost/auth/callback",
             logout_url="https://auth.example.com/logout",
         )
-        client = create_app(
-            FakeService(), self.ctx, AuthGate(config)
-        ).test_client()
+        client = create_app(FakeService(), self.ctx, AuthGate(config)).test_client()
         response = client.get("/logout")
         self.assertEqual(response.status_code, 302)
         self.assertEqual(
@@ -218,9 +208,7 @@ class OIDCLoginFlowTests(unittest.TestCase):
 
     def test_callback_rejects_wrong_state(self):
         self.client.get("/login")
-        response = self.client.get(
-            "/auth/callback?code=test-code&state=wrong"
-        )
+        response = self.client.get("/auth/callback?code=test-code&state=wrong")
         self.assertEqual(response.status_code, 401)
         self.assertIn("Login fehlgeschlagen", response.get_data(as_text=True))
         with self.client.session_transaction() as sess:

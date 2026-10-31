@@ -312,12 +312,13 @@ pkill -f 'wa.py serve'
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python -m unittest discover -s tests
-uvx ruff check . --exclude .venv --exclude data
+.venv/bin/pip install -r requirements-dev.txt
+make quality      # lint, format check, type check, tests, coverage
 ```
 
-Ruff configuration lives in `ruff.toml`.
+Individual targets: `make test`, `make lint`, `make format`,
+`make typecheck`, `make coverage`. Configuration lives in `ruff.toml`,
+`mypy.ini` and `.coveragerc`.
 
 ## Troubleshooting
 

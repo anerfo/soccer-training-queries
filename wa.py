@@ -62,9 +62,7 @@ def configure_logging(verbose: bool = False, log_file: str | None = None) -> Non
         handlers=handlers,
         force=True,
     )
-    logging.getLogger("neonize").setLevel(
-        logging.DEBUG if verbose else logging.WARNING
-    )
+    logging.getLogger("neonize").setLevel(logging.DEBUG if verbose else logging.WARNING)
 
 
 def normalize_text(text: str) -> str:
@@ -72,15 +70,11 @@ def normalize_text(text: str) -> str:
         raise ValueError("message text is empty")
     size = len(text.encode("utf-8"))
     if size > MAX_MESSAGE_BYTES:
-        raise ValueError(
-            f"message is too long ({size} bytes, max {MAX_MESSAGE_BYTES})"
-        )
+        raise ValueError(f"message is too long ({size} bytes, max {MAX_MESSAGE_BYTES})")
     return text
 
 
-def normalize_poll(
-    question: str, options: list[str]
-) -> tuple[str, list[str]]:
+def normalize_poll(question: str, options: list[str]) -> tuple[str, list[str]]:
     """Validate a poll and return the cleaned question and options."""
     question = question.strip()
     if not question:
@@ -96,9 +90,7 @@ def normalize_poll(
     if any(not option for option in cleaned):
         raise ValueError("poll options cannot be empty")
     if any(len(option) > MAX_POLL_OPTION for option in cleaned):
-        raise ValueError(
-            f"poll options must be at most {MAX_POLL_OPTION} characters"
-        )
+        raise ValueError(f"poll options must be at most {MAX_POLL_OPTION} characters")
     if len({option.casefold() for option in cleaned}) != len(cleaned):
         raise ValueError("poll options must be unique")
     return question, cleaned
@@ -119,8 +111,7 @@ def parse_polls(text: str) -> list[dict[str, Any]]:
         parts = [part.strip() for part in line.split("|")]
         if len(parts) < 3:
             raise ValueError(
-                f"line {line_number}: expected "
-                "'question | answer 1 | answer 2'"
+                f"line {line_number}: expected 'question | answer 1 | answer 2'"
             )
         question, options = normalize_poll(parts[0], parts[1:])
         polls.append({"question": question, "options": options})
@@ -172,9 +163,7 @@ def save_poll_history(path: Path, history: dict[str, Any]) -> None:
 def load_contacts(path: Path) -> dict[str, str]:
     contacts = _load_json_object(path)
     return {
-        str(key): value
-        for key, value in contacts.items()
-        if isinstance(value, str)
+        str(key): value for key, value in contacts.items() if isinstance(value, str)
     }
 
 
@@ -202,8 +191,7 @@ def poll_option_hashes(options: list[str]) -> dict[str, str]:
     names, so this lets us translate a decrypted vote back to the answers.
     """
     return {
-        hashlib.sha256(option.encode("utf-8")).hexdigest(): option
-        for option in options
+        hashlib.sha256(option.encode("utf-8")).hexdigest(): option for option in options
     }
 
 
@@ -280,9 +268,7 @@ class PollHistoryStore:
             history = load_poll_history(self.path)
             before = len(history["polls"])
             history["polls"] = [
-                poll
-                for poll in history["polls"]
-                if not poll.get("simulated")
+                poll for poll in history["polls"] if not poll.get("simulated")
             ]
             removed = before - len(history["polls"])
             if removed:
@@ -339,9 +325,7 @@ def choose_poll(
         if len(polls) == 1:
             index = 0
         else:
-            candidates = [
-                index for index in range(len(polls)) if index != last_index
-            ]
+            candidates = [index for index in range(len(polls)) if index != last_index]
             index = random.choice(candidates)
     else:
         index = 0 if last_index is None else (last_index + 1) % len(polls)
@@ -401,18 +385,12 @@ def match_group(groups: list[dict[str, str]], query: str) -> dict[str, str]:
         _raise_ambiguous(q, partial)
 
     names = ", ".join(sorted({g["name"] for g in groups}, key=str.casefold))
-    raise LookupError(
-        f"group {q!r} not found; joined groups: {names[:800] or 'none'}"
-    )
+    raise LookupError(f"group {q!r} not found; joined groups: {names[:800] or 'none'}")
 
 
 def _raise_ambiguous(query: str, matches: list[dict[str, str]]) -> None:
-    options = ", ".join(
-        f"{g['name']} ({g['jid']})" for g in matches[:10]
-    )
-    raise LookupError(
-        f"group {query!r} is ambiguous; use a JID: {options}"
-    )
+    options = ", ".join(f"{g['name']} ({g['jid']})" for g in matches[:10])
+    raise LookupError(f"group {query!r} is ambiguous; use a JID: {options}")
 
 
 def _install_poll_vote_workaround() -> None:
@@ -509,7 +487,9 @@ class WhatsAppService:
         @self.client.event(LoggedOutEv)
         def _on_logged_out(_client: Any, _event: Any) -> None:
             self.connected.clear()
-            self._fail("session was logged out; restart the daemon and scan a new QR code")
+            self._fail(
+                "session was logged out; restart the daemon and scan a new QR code"
+            )
 
         @self.client.event(ConnectFailureEv)
         def _on_connect_failure(_client: Any, event: Any) -> None:
@@ -522,9 +502,7 @@ class WhatsAppService:
         @self.client.event(TemporaryBanEv)
         def _on_temporary_ban(_client: Any, event: Any) -> None:
             self.connected.clear()
-            self._fail(
-                f"temporary ban (reason={event.Code}, expires={event.Expire})"
-            )
+            self._fail(f"temporary ban (reason={event.Code}, expires={event.Expire})")
 
         @self.client.event(MessageEv)
         def _on_message(_client: Any, event: Any) -> None:
@@ -561,7 +539,7 @@ class WhatsAppService:
             qr = segno.make_qr(data)
             self.qr_path.parent.mkdir(parents=True, exist_ok=True)
             tmp_path = self.qr_path.with_suffix(".tmp.png")
-            qr.save(tmp_path, scale=8, border=2)
+            qr.save(str(tmp_path), scale=8, border=2)
             os.replace(tmp_path, self.qr_path)
             if sys.stdout.isatty():
                 qr.terminal(compact=True)
@@ -751,11 +729,7 @@ class WhatsAppService:
             info = contact.Info
             pushname = (info.PushName or "").strip()
             name = (
-                info.FullName
-                or info.FirstName
-                or info.BusinessName
-                or pushname
-                or ""
+                info.FullName or info.FirstName or info.BusinessName or pushname or ""
             ).strip()
             if number and name:
                 names[number] = name
@@ -948,9 +922,7 @@ class WhatsAppService:
             self._connect_thread.join(timeout=5)
 
     def connection_thread_alive(self) -> bool:
-        return (
-            self._connect_thread is not None and self._connect_thread.is_alive()
-        )
+        return self._connect_thread is not None and self._connect_thread.is_alive()
 
 
 def _error(message: str) -> dict[str, Any]:
@@ -977,7 +949,7 @@ class _RequestHandler(socketserver.StreamRequestHandler):
                 except json.JSONDecodeError as exc:
                     response = _error(f"invalid JSON: {exc}")
                 else:
-                    service = self.server.service
+                    service = self.server.service  # type: ignore[attr-defined]
                     response = service.dispatch(request)
         except TimeoutError:
             response = _error("request timed out")
@@ -1028,9 +1000,7 @@ def serve(args: argparse.Namespace) -> int:
     calendars_path = Path(args.calendars)
     calendar_state_path = Path(args.calendar_state)
 
-    service = WhatsAppService(
-        Path(args.db), Path(args.qr), poll_history_path
-    )
+    service = WhatsAppService(Path(args.db), Path(args.qr), poll_history_path)
     service.start()
 
     import calendar_sync
@@ -1075,9 +1045,7 @@ def serve(args: argparse.Namespace) -> int:
                 },
             )
             web_server = start_web(app, args.web_host, args.web_port)
-            log.info(
-                "Web UI on http://%s:%s", args.web_host, args.web_port
-            )
+            log.info("Web UI on http://%s:%s", args.web_host, args.web_port)
         except Exception:
             log.exception("Could not start web UI")
 
@@ -1150,8 +1118,7 @@ def _request(
     except OSError as exc:
         client.close()
         raise RuntimeError(
-            f"cannot reach daemon at {socket_path}: {exc}. "
-            "Is `wa.py serve` running?"
+            f"cannot reach daemon at {socket_path}: {exc}. Is `wa.py serve` running?"
         ) from exc
 
     try:
@@ -1429,11 +1396,13 @@ def build_parser() -> argparse.ArgumentParser:
         "serve", parents=[common], help="run the WhatsApp daemon"
     )
     serve_parser.add_argument(
-        "--db", default=os.environ.get("WA_DB", str(DEFAULT_DB)),
+        "--db",
+        default=os.environ.get("WA_DB", str(DEFAULT_DB)),
         help=f"session database path (default: {DEFAULT_DB})",
     )
     serve_parser.add_argument(
-        "--qr", default=str(DEFAULT_QR),
+        "--qr",
+        default=str(DEFAULT_QR),
         help=f"where to write the pairing QR code (default: {DEFAULT_QR})",
     )
     serve_parser.add_argument("--log-file", help="also write logs to this file")
@@ -1484,9 +1453,7 @@ def build_parser() -> argparse.ArgumentParser:
     send_parser = subparsers.add_parser(
         "send", parents=[common], help="send a message to a group"
     )
-    send_parser.add_argument(
-        "--group", help="group name or JID (or set WA_GROUP)"
-    )
+    send_parser.add_argument("--group", help="group name or JID (or set WA_GROUP)")
     send_parser.add_argument("--text", help="message text")
     send_parser.add_argument("--text-file", help="read the message from a file")
     send_parser.add_argument(
@@ -1500,9 +1467,7 @@ def build_parser() -> argparse.ArgumentParser:
     poll_parser = subparsers.add_parser(
         "poll", parents=[common], help="send a WhatsApp poll to a group"
     )
-    poll_parser.add_argument(
-        "--group", help="group name or JID (or set WA_GROUP)"
-    )
+    poll_parser.add_argument("--group", help="group name or JID (or set WA_GROUP)")
     poll_parser.add_argument(
         "--question", default="AH-Training am Mittwoch – bist du dabei?"
     )
@@ -1530,9 +1495,7 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[common],
         help="send the next poll from the editable list",
     )
-    poll_next_parser.add_argument(
-        "--group", help="group name or JID (or set WA_GROUP)"
-    )
+    poll_next_parser.add_argument("--group", help="group name or JID (or set WA_GROUP)")
     poll_next_parser.add_argument(
         "--file",
         default=str(DEFAULT_POLLS_FILE),

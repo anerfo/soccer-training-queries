@@ -13,9 +13,7 @@ class FakeCalendarScheduler:
     def preview(self, now=None, limit=12):
         return [], None
 
-    def month_entries(
-        self, year, month, timezone_name="Europe/Berlin", now=None
-    ):
+    def month_entries(self, year, month, timezone_name="Europe/Berlin", now=None):
         return {"events": [], "sends": []}, None
 
 
@@ -140,9 +138,7 @@ class WebTests(unittest.TestCase):
                     "sends": [
                         {
                             "send_at": datetime(2026, 11, 3, 23, tzinfo=UTC),
-                            "event_start": datetime(
-                                2026, 11, 4, 19, tzinfo=UTC
-                            ),
+                            "event_start": datetime(2026, 11, 4, 19, tzinfo=UTC),
                             "summary": "Training",
                             "calendar": "Test",
                             "group": "Gruppe",
@@ -160,9 +156,7 @@ class WebTests(unittest.TestCase):
         ctx = dict(self.ctx)
         ctx["calendar_scheduler"] = Scheduler()
         client = create_app(self.service, ctx).test_client()
-        html = client.get(
-            "/calendar/view?month=2026-11"
-        ).get_data(as_text=True)
+        html = client.get("/calendar/view?month=2026-11").get_data(as_text=True)
         self.assertIn("Kalenderansicht", html)
         self.assertIn("Training", html)
         self.assertIn("Dabei?", html)
@@ -171,13 +165,9 @@ class WebTests(unittest.TestCase):
 
     def test_security_headers(self):
         response = self.client.get("/health")
-        self.assertEqual(
-            response.headers["X-Content-Type-Options"], "nosniff"
-        )
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(response.headers["X-Frame-Options"], "DENY")
-        self.assertEqual(
-            response.headers["Referrer-Policy"], "same-origin"
-        )
+        self.assertEqual(response.headers["Referrer-Policy"], "same-origin")
 
     def test_oversized_requests_are_rejected(self):
         response = self.client.post(
@@ -217,9 +207,7 @@ class WebTests(unittest.TestCase):
 
     def test_votes_page_shows_names_and_answers(self):
         self._write_history()
-        wa.save_contacts(
-            self.contacts_path, {"491700000001": "Anna Beispiel"}
-        )
+        wa.save_contacts(self.contacts_path, {"491700000001": "Anna Beispiel"})
         response = self.client.get("/votes")
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
@@ -279,15 +267,11 @@ class WebTests(unittest.TestCase):
             "/votes/delete", data={"message_id": "poll-1", "i": "0"}
         )
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(
-            wa.load_poll_history(self.poll_history_path)["polls"], []
-        )
+        self.assertEqual(wa.load_poll_history(self.poll_history_path)["polls"], [])
 
         self._write_history()
         self.client.post("/votes/clear")
-        self.assertEqual(
-            wa.load_poll_history(self.poll_history_path)["polls"], []
-        )
+        self.assertEqual(wa.load_poll_history(self.poll_history_path)["polls"], [])
 
     def test_votes_filter_by_answer(self):
         self._write_history()
@@ -339,9 +323,7 @@ class WebTests(unittest.TestCase):
         return AuthGate(config, Validator())
 
     def test_api_requires_bearer_token(self):
-        client = create_app(
-            self.service, self.ctx, self._gate()
-        ).test_client()
+        client = create_app(self.service, self.ctx, self._gate()).test_client()
 
         response = client.get("/api/status")
         self.assertEqual(response.status_code, 401)
@@ -353,9 +335,7 @@ class WebTests(unittest.TestCase):
         self.assertIn("/login", page.headers["Location"])
 
     def test_api_accepts_valid_bearer_token(self):
-        client = create_app(
-            self.service, self.ctx, self._gate()
-        ).test_client()
+        client = create_app(self.service, self.ctx, self._gate()).test_client()
         response = client.get(
             "/api/status",
             headers={"Authorization": "Bearer good-token"},
@@ -363,9 +343,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_api_ignores_session(self):
-        client = create_app(
-            self.service, self.ctx, self._gate()
-        ).test_client()
+        client = create_app(self.service, self.ctx, self._gate()).test_client()
         with client.session_transaction() as sess:
             sess["user"] = {"sub": "session-user", "exp": time.time() + 3600}
         # API is bearer-only, so a session alone must not authorize it.
@@ -395,18 +373,12 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
 
     def test_static_and_health_are_exempt_from_auth(self):
-        client = create_app(
-            self.service, self.ctx, self._gate()
-        ).test_client()
-        self.assertEqual(
-            client.get("/static/style.css").status_code, 200
-        )
+        client = create_app(self.service, self.ctx, self._gate()).test_client()
+        self.assertEqual(client.get("/static/style.css").status_code, 200)
         self.assertEqual(client.get("/health").status_code, 200)
 
     def test_unauthenticated_page_redirects_to_login(self):
-        client = create_app(
-            self.service, self.ctx, self._gate()
-        ).test_client()
+        client = create_app(self.service, self.ctx, self._gate()).test_client()
         response = client.get("/votes")
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.headers["Location"].startswith("/login"))
@@ -416,10 +388,7 @@ class WebTests(unittest.TestCase):
 
         class FakeLogin:
             def authorization_url(self, **kwargs):
-                return (
-                    "https://auth.example.com/authorize?state="
-                    + kwargs["state"]
-                )
+                return "https://auth.example.com/authorize?state=" + kwargs["state"]
 
             def logout_url(self, **_kwargs):
                 return ""
@@ -492,9 +461,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         config = json.loads(self.calendar_config_path.read_text())
         self.assertEqual(len(config["rules"]), 1)
-        self.assertEqual(
-            config["rules"][0]["poll_questions"], ["Erste?", "Zweite?"]
-        )
+        self.assertEqual(config["rules"][0]["poll_questions"], ["Erste?", "Zweite?"])
         html = self.client.get("/calendar").get_data(as_text=True)
         self.assertIn("AH-Training", html)
         self.assertIn("Test", html)
@@ -598,9 +565,7 @@ class WebTests(unittest.TestCase):
             timestamp=1,
         )
         self.client.post("/simulate")
-        self.assertEqual(
-            len(wa.load_poll_history(self.poll_history_path)["polls"]), 2
-        )
+        self.assertEqual(len(wa.load_poll_history(self.poll_history_path)["polls"]), 2)
         response = self.client.post("/simulate/clear")
         self.assertEqual(response.status_code, 302)
         polls = wa.load_poll_history(self.poll_history_path)["polls"]
@@ -637,9 +602,7 @@ class WebTests(unittest.TestCase):
             data={"contacts": "491700000001 = Anna\n# Kommentar\n"},
         )
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(
-            wa.load_contacts(self.contacts_path), {"491700000001": "Anna"}
-        )
+        self.assertEqual(wa.load_contacts(self.contacts_path), {"491700000001": "Anna"})
 
     def test_qr_code_is_only_served_while_disconnected(self):
         self.qr_path.write_bytes(b"\x89PNG\r\n\x1a\nfake")
@@ -670,9 +633,7 @@ class WebTests(unittest.TestCase):
             "/polls", data={"polls": "Kaputt | nur eine Antwort\n"}
         )
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(
-            self.polls_path.read_text(encoding="utf-8"), before
-        )
+        self.assertEqual(self.polls_path.read_text(encoding="utf-8"), before)
 
     def test_send_now_sends_and_advances_rotation(self):
         response = self.client.post("/send-now")

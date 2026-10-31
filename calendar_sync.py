@@ -96,9 +96,7 @@ def parse_offset(value: str) -> int:
     """Parse an offset like ``20h``, ``2d`` or ``90m`` into minutes."""
     match = _OFFSET_RE.match(str(value or ""))
     if not match:
-        raise CalendarError(
-            f"invalid offset {value!r}; use e.g. 20h, 2d or 90m"
-        )
+        raise CalendarError(f"invalid offset {value!r}; use e.g. 20h, 2d or 90m")
     amount = float(match.group(1).replace(",", "."))
     unit = (match.group(2) or "m").lower()
     if unit.startswith(("d", "tag")):
@@ -136,13 +134,9 @@ def fetch_ics(url: str, timeout: float = 15.0) -> bytes:
             },
         )
     except Exception as exc:
-        raise CalendarError(
-            f"could not fetch calendar: {type(exc).__name__}"
-        ) from exc
+        raise CalendarError(f"could not fetch calendar: {type(exc).__name__}") from exc
     if response.status_code >= 400:
-        raise CalendarError(
-            f"calendar URL returned HTTP {response.status_code}"
-        )
+        raise CalendarError(f"calendar URL returned HTTP {response.status_code}")
     body = response.content
     if b"begin:vcalendar" not in body[:1024].lower():
         raise CalendarError(
@@ -159,9 +153,7 @@ def expand_events(
         calendar = icalendar.Calendar.from_ical(ics_bytes)
     except Exception as exc:
         message = str(exc).splitlines()[0][:200]
-        raise CalendarError(
-            f"cannot parse iCalendar data: {message}"
-        ) from exc
+        raise CalendarError(f"cannot parse iCalendar data: {message}") from exc
 
     try:
         occurrences = recurring_ical_events.of(calendar).between(start, end)
@@ -193,9 +185,7 @@ def expand_events(
             {
                 "uid": str(event.get("UID", "")),
                 "recurrence_id": (
-                    recurrence_id.dt.isoformat()
-                    if recurrence_id is not None
-                    else ""
+                    recurrence_id.dt.isoformat() if recurrence_id is not None else ""
                 ),
                 "summary": str(event.get("SUMMARY", "")).strip(),
                 "start": start_dt,
@@ -228,11 +218,7 @@ class CalendarFeedCache:
             if entry is not None and not force and now - entry[0] < self.ttl:
                 return entry[1]
             error = self._errors.get(url)
-            if (
-                error is not None
-                and not force
-                and now - error[0] < self.error_ttl
-            ):
+            if error is not None and not force and now - error[0] < self.error_ttl:
                 raise error[1]
         try:
             data = fetch_ics(url)
@@ -241,9 +227,7 @@ class CalendarFeedCache:
                 self._errors[url] = (now, exc)
             raise
         except Exception as exc:
-            short = CalendarError(
-                f"could not fetch calendar: {type(exc).__name__}"
-            )
+            short = CalendarError(f"could not fetch calendar: {type(exc).__name__}")
             with self._lock:
                 self._errors[url] = (now, short)
             raise short from exc
@@ -376,9 +360,7 @@ class CalendarScheduler:
 
         for calendar in calendars:
             calendar_rules = [
-                rule
-                for rule in rules
-                if rule.get("calendar_id") == calendar.get("id")
+                rule for rule in rules if rule.get("calendar_id") == calendar.get("id")
             ]
             if not calendar_rules:
                 continue
@@ -387,10 +369,7 @@ class CalendarScheduler:
                 events = self._events(calendar, window_start, window_end)
             except Exception as exc:
                 now_ts = time.monotonic()
-                if (
-                    now_ts - self._error_logged.get(url, 0)
-                    >= ERROR_CACHE_SECONDS
-                ):
+                if now_ts - self._error_logged.get(url, 0) >= ERROR_CACHE_SECONDS:
                     log.warning(
                         "could not load calendar %s: %s",
                         calendar.get("name") or "calendar",
@@ -407,10 +386,7 @@ class CalendarScheduler:
                 except CalendarError as exc:
                     key = f"rule:{rule.get('id', '')}"
                     now_ts = time.monotonic()
-                    if (
-                        now_ts - self._error_logged.get(key, 0)
-                        >= ERROR_CACHE_SECONDS
-                    ):
+                    if now_ts - self._error_logged.get(key, 0) >= ERROR_CACHE_SECONDS:
                         log.warning(
                             "skipping calendar rule %s: %s",
                             rule.get("id"),
@@ -436,9 +412,7 @@ class CalendarScheduler:
 
             # Refresh once so a deleted single occurrence is respected.
             try:
-                fresh = self._events(
-                    calendar, window_start, window_end, force=True
-                )
+                fresh = self._events(calendar, window_start, window_end, force=True)
             except Exception:
                 fresh = events
             fresh_keys = {
@@ -468,9 +442,7 @@ class CalendarScheduler:
                 try:
                     info = self._send(rule, fresh_keys[key], state)
                 except Exception:
-                    log.exception(
-                        "calendar send failed for %r", event["summary"]
-                    )
+                    log.exception("calendar send failed for %r", event["summary"])
                     continue
                 state["sent"][key] = int(moment.timestamp())
                 state.setdefault("history", {})[key] = {
@@ -529,26 +501,20 @@ class CalendarScheduler:
 
         for calendar in calendars:
             calendar_rules = [
-                rule
-                for rule in rules
-                if rule.get("calendar_id") == calendar.get("id")
+                rule for rule in rules if rule.get("calendar_id") == calendar.get("id")
             ]
             if not calendar_rules:
                 continue
             try:
                 events = self._events(calendar, window_start, window_end)
             except Exception as exc:
-                errors.append(
-                    f"{calendar.get('name') or calendar.get('url')}: {exc}"
-                )
+                errors.append(f"{calendar.get('name') or calendar.get('url')}: {exc}")
                 continue
             for rule in calendar_rules:
                 try:
                     offset = parse_offset(rule.get("offset", "20h"))
                 except CalendarError as exc:
-                    errors.append(
-                        f"rule {rule.get('match', '')!r}: {exc}"
-                    )
+                    errors.append(f"rule {rule.get('match', '')!r}: {exc}")
                     continue
                 for event in events:
                     if not match_event(rule, event["summary"]):
@@ -621,9 +587,7 @@ class CalendarScheduler:
         max_offset = 0
         for rule in rules:
             try:
-                max_offset = max(
-                    max_offset, parse_offset(rule.get("offset", "20h"))
-                )
+                max_offset = max(max_offset, parse_offset(rule.get("offset", "20h")))
             except CalendarError:
                 continue
 
@@ -636,28 +600,20 @@ class CalendarScheduler:
 
         for calendar in calendars:
             calendar_rules = [
-                rule
-                for rule in rules
-                if rule.get("calendar_id") == calendar.get("id")
+                rule for rule in rules if rule.get("calendar_id") == calendar.get("id")
             ]
             if not calendar_rules:
                 continue
             try:
                 events = self._events(calendar, window_start, window_end)
             except Exception as exc:
-                errors.append(
-                    f"{calendar.get('name') or 'calendar'}: {exc}"
-                )
+                errors.append(f"{calendar.get('name') or 'calendar'}: {exc}")
                 continue
 
-            rule_items: dict[str, list[dict[str, Any]]] = {}
+            rule_items: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = {}
             for event in events:
                 event_start = event["start"].astimezone(tz)
-                event_end = (
-                    event["end"].astimezone(tz)
-                    if event.get("end")
-                    else None
-                )
+                event_end = event["end"].astimezone(tz) if event.get("end") else None
                 matching_rules = [
                     rule
                     for rule in calendar_rules
@@ -675,10 +631,7 @@ class CalendarScheduler:
                             "description": event.get("description", ""),
                             "uid": event["uid"],
                             "recurrence_id": event["recurrence_id"],
-                            "rules": [
-                                rule.get("match", "")
-                                for rule in matching_rules
-                            ],
+                            "rules": [rule.get("match", "") for rule in matching_rules],
                         }
                     )
                 for rule in matching_rules:
@@ -704,9 +657,7 @@ class CalendarScheduler:
                         "recurrence_id": event["recurrence_id"],
                         "sent": False,
                     }
-                    rule_items.setdefault(rule.get("id", ""), []).append(
-                        (item, rule)
-                    )
+                    rule_items.setdefault(rule.get("id", ""), []).append((item, rule))
 
             for rule_id, entries in rule_items.items():
                 rule = entries[0][1]
@@ -717,9 +668,7 @@ class CalendarScheduler:
                 ]
                 if not rotation:
                     rotation = [poll["question"] for poll in polls]
-                for item, _rule in sorted(
-                    entries, key=lambda pair: pair[0]["send_at"]
-                ):
+                for item, _rule in sorted(entries, key=lambda pair: pair[0]["send_at"]):
                     key = item["key"]
                     if key in history:
                         stored = history[key]

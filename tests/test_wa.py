@@ -29,14 +29,10 @@ class MatchGroupTests(unittest.TestCase):
         self.assertEqual(match_group(GROUPS, "family")["jid"], "555-666@g.us")
 
     def test_partial_name(self):
-        self.assertEqual(
-            match_group(GROUPS, "Old")["jid"], "333-444@g.us"
-        )
+        self.assertEqual(match_group(GROUPS, "Old")["jid"], "333-444@g.us")
 
     def test_jid_passthrough(self):
-        self.assertEqual(
-            match_group(GROUPS, "999-000@g.us")["jid"], "999-000@g.us"
-        )
+        self.assertEqual(match_group(GROUPS, "999-000@g.us")["jid"], "999-000@g.us")
 
     def test_ambiguous_name_raises(self):
         with self.assertRaises(LookupError):
@@ -188,9 +184,7 @@ class PollNextCommandTests(unittest.TestCase):
         self.assertFalse(self.state_file.exists())
 
     def test_failed_send_does_not_advance(self):
-        with mock.patch(
-            "wa._request", return_value={"ok": False, "error": "nope"}
-        ):
+        with mock.patch("wa._request", return_value={"ok": False, "error": "nope"}):
             args = argparse.Namespace(
                 group="Group",
                 file=str(self.poll_file),
@@ -248,9 +242,7 @@ class PollVoteWorkaroundTests(unittest.TestCase):
                 fake.DecryptPollVote.errcheck(result, None, None), b"hello"
             )
             self.assertEqual(fake.freed, [result])
-            self.assertEqual(
-                fake.DecryptPollVote.errcheck(None, None, None), b""
-            )
+            self.assertEqual(fake.DecryptPollVote.errcheck(None, None, None), b"")
 
 
 class PollHistoryStoreTests(unittest.TestCase):
@@ -295,20 +287,12 @@ class PollHistoryStoreTests(unittest.TestCase):
         )
         poll = wa.load_poll_history(self.history_path)["polls"][0]
         votes = poll["votes"]
-        self.assertEqual(
-            votes["491700000001@s.whatsapp.net"]["selected"], ["Ja"]
-        )
-        self.assertEqual(
-            votes["491700000002@s.whatsapp.net"]["selected"], ["Nein"]
-        )
+        self.assertEqual(votes["491700000001@s.whatsapp.net"]["selected"], ["Ja"])
+        self.assertEqual(votes["491700000002@s.whatsapp.net"]["selected"], ["Nein"])
 
     def test_timestamps_are_normalized_to_seconds(self):
-        self.assertEqual(
-            wa.normalize_epoch(1_793_306_491_000), 1_793_306_491
-        )
-        self.assertEqual(
-            wa.normalize_epoch(1_793_306_491_000_000), 1_793_306_491
-        )
+        self.assertEqual(wa.normalize_epoch(1_793_306_491_000), 1_793_306_491)
+        self.assertEqual(wa.normalize_epoch(1_793_306_491_000_000), 1_793_306_491)
         self.assertEqual(wa.normalize_epoch(1_793_306_491), 1_793_306_491)
         self.assertEqual(wa.normalize_epoch(0), 0)
         self.assertEqual(wa.normalize_epoch("nope"), 0)
@@ -327,16 +311,12 @@ class PollHistoryStoreTests(unittest.TestCase):
             sender="1@s.whatsapp.net",
             sender_alt="",
             pushname="Anna",
-            selected_hashes=[
-                wa.hashlib.sha256(b"Ja").hexdigest()
-            ],
+            selected_hashes=[wa.hashlib.sha256(b"Ja").hexdigest()],
             timestamp=1_793_306_491_000,
         )
         poll = wa.load_poll_history(self.history_path)["polls"][0]
         self.assertEqual(poll["sent_at"], 1_793_306_491)
-        self.assertEqual(
-            poll["votes"]["1@s.whatsapp.net"]["timestamp"], 1_793_306_491
-        )
+        self.assertEqual(poll["votes"]["1@s.whatsapp.net"]["timestamp"], 1_793_306_491)
 
     def test_delete_poll_and_clear_all(self):
         for message_id in ("a", "b"):
@@ -354,9 +334,7 @@ class PollHistoryStoreTests(unittest.TestCase):
         self.assertEqual([poll["message_id"] for poll in polls], ["b"])
 
         self.assertEqual(self.store.clear_all(), 1)
-        self.assertEqual(
-            wa.load_poll_history(self.history_path)["polls"], []
-        )
+        self.assertEqual(wa.load_poll_history(self.history_path)["polls"], [])
         self.assertEqual(self.store.clear_all(), 0)
 
     def test_unknown_poll_vote_is_ignored(self):
@@ -395,9 +373,7 @@ class GroupContactsTests(unittest.TestCase):
         second.PhoneNumber.CopyFrom(jid("491700000002", "s.whatsapp.net"))
         second.DisplayName = "Bert"
 
-        contact = neonize_proto.Contact(
-            JID=jid("491700000001", "s.whatsapp.net")
-        )
+        contact = neonize_proto.Contact(JID=jid("491700000001", "s.whatsapp.net"))
         contact.Info.FullName = "Anna Beispiel"
 
         self.group = group
@@ -495,9 +471,7 @@ class HandlePollVoteTests(unittest.TestCase):
     def test_poll_vote_is_recorded(self):
         from neonize.proto.waE2E import WAWebProtobufsE2E_pb2 as e2e
 
-        vote = e2e.PollVoteMessage(
-            selectedOptions=[wa.hashlib.sha256(b"Ja").digest()]
-        )
+        vote = e2e.PollVoteMessage(selectedOptions=[wa.hashlib.sha256(b"Ja").digest()])
         self.service.client = mock.MagicMock()
         self.service.client.decrypt_poll_vote.return_value = vote
 

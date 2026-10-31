@@ -7,3 +7,7 @@ __pycache__/
 *.swp
 *.swo
 .*.swp
+.coverage
+.ruff_cache/
+.mypy_cache/
+htmlcov/

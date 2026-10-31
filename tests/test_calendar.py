@@ -54,9 +54,7 @@ class FetchTests(unittest.TestCase):
 
     def test_html_response_is_rejected_with_short_error(self):
         response = self.Response(b"<!doctype html><html>sign in</html>")
-        with mock.patch(
-            "calendar_sync.requests.get", return_value=response
-        ):
+        with mock.patch("calendar_sync.requests.get", return_value=response):
             with self.assertRaises(calendar_sync.CalendarError) as ctx:
                 calendar_sync.fetch_ics("https://example.com/cal")
         message = str(ctx.exception)
@@ -93,9 +91,7 @@ class OffsetTests(unittest.TestCase):
 class MatchTests(unittest.TestCase):
     def test_contains_exact_regex(self):
         rule = {"match": "training", "match_type": "contains"}
-        self.assertTrue(
-            calendar_sync.match_event(rule, "AH-Training am Mittwoch")
-        )
+        self.assertTrue(calendar_sync.match_event(rule, "AH-Training am Mittwoch"))
         self.assertFalse(calendar_sync.match_event(rule, "Spieltag"))
 
         rule = {"match": "AH-Training", "match_type": "exact"}
@@ -108,9 +104,7 @@ class MatchTests(unittest.TestCase):
 
 class ExpandTests(unittest.TestCase):
     def test_recurrence_and_exdate(self):
-        events = calendar_sync.expand_events(
-            ICS, utc(2026, 10, 1), utc(2026, 11, 15)
-        )
+        events = calendar_sync.expand_events(ICS, utc(2026, 10, 1), utc(2026, 11, 15))
         starts = [event["start"] for event in events]
         self.assertEqual(
             starts,
@@ -136,9 +130,7 @@ STATUS:CANCELLED
 END:VEVENT
 END:VCALENDAR
 """
-        events = calendar_sync.expand_events(
-            ics, utc(2026, 10, 1), utc(2026, 10, 15)
-        )
+        events = calendar_sync.expand_events(ics, utc(2026, 10, 1), utc(2026, 10, 15))
         self.assertEqual(events, [])
 
 
@@ -189,9 +181,7 @@ class SchedulerTests(unittest.TestCase):
             self.polls_path,
             wa.parse_polls,
         )
-        self.patch = mock.patch(
-            "calendar_sync.fetch_ics", return_value=ICS
-        )
+        self.patch = mock.patch("calendar_sync.fetch_ics", return_value=ICS)
         self.patch.start()
 
     def tearDown(self):
@@ -228,9 +218,7 @@ class SchedulerTests(unittest.TestCase):
         )
         self.config_path.write_text(json.dumps(config), encoding="utf-8")
         self.scheduler.tick(now=utc(2026, 10, 7, 18))
-        self.assertEqual(
-            self.service.texts, [("Gruppe", "Bitte abstimmen")]
-        )
+        self.assertEqual(self.service.texts, [("Gruppe", "Bitte abstimmen")])
 
     def test_month_entries_show_events_and_sends(self):
         data, error = self.scheduler.month_entries(
@@ -250,9 +238,7 @@ class SchedulerTests(unittest.TestCase):
             [send["content"] for send in data["sends"]],
             ["Erste?", "Zweite?"],
         )
-        self.assertEqual(
-            data["sends"][0]["send_at"].date().isoformat(), "2026-11-03"
-        )
+        self.assertEqual(data["sends"][0]["send_at"].date().isoformat(), "2026-11-03")
 
     def test_month_entries_use_history_for_sent_messages(self):
         self.scheduler.tick(now=utc(2026, 11, 3, 23))

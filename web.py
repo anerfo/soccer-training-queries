@@ -208,12 +208,7 @@ def _vote_rows(
     rows = []
     for key, vote in (poll.get("votes") or {}).items():
         jid, number = _vote_identity(vote)
-        name = (
-            contacts.get(number)
-            or contacts.get(jid)
-            or contacts.get(key)
-            or ""
-        )
+        name = contacts.get(number) or contacts.get(jid) or contacts.get(key) or ""
         rows.append(
             {
                 "name": name,
@@ -225,7 +220,7 @@ def _vote_rows(
             }
         )
     rows.sort(
-        key=lambda row: (
+        key=lambda row: str(
             row["name"] or row["pushname"] or row["number"] or row["jid"]
         ).casefold()
     )
@@ -322,9 +317,7 @@ _UNAUTHORIZED_PAGE = (
 
 def _unauthorized(message: str, as_json: bool) -> Response:
     if as_json:
-        response: Response = jsonify(
-            ok=False, error="unauthorized", detail=message
-        )
+        response: Response = jsonify(ok=False, error="unauthorized", detail=message)
     else:
         response = Response(
             _UNAUTHORIZED_PAGE.format(detail=escape(message)),
@@ -395,9 +388,9 @@ def create_app(
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
-        SESSION_COOKIE_SECURE=os.environ.get(
-            "SESSION_COOKIE_SECURE", ""
-        ).strip().lower()
+        SESSION_COOKIE_SECURE=os.environ.get("SESSION_COOKIE_SECURE", "")
+        .strip()
+        .lower()
         in {"1", "true", "yes", "on"},
         MAX_CONTENT_LENGTH=2 * 1024 * 1024,
     )
@@ -439,9 +432,7 @@ def create_app(
                 if is_api:
                     g.auth_claims = auth.check(request.headers)
                 else:
-                    g.auth_claims = auth.authorize(
-                        request.headers, session.get("user")
-                    )
+                    g.auth_claims = auth.authorize(request.headers, session.get("user"))
             except MissingToken as exc:
                 if is_api:
                     return _unauthorized(str(exc), True)
@@ -502,9 +493,8 @@ def create_app(
                 "OIDC_CLIENT_ID and OIDC_REDIRECT_URI",
             )
 
-        redirect_uri = (
-            auth.config.redirect_uri
-            or _external_base(auth) + url_for("auth_callback")
+        redirect_uri = auth.config.redirect_uri or _external_base(auth) + url_for(
+            "auth_callback"
         )
         verifier, challenge = new_pkce_pair()
         state = secrets.token_urlsafe(32)
@@ -533,16 +523,12 @@ def create_app(
 
         error = request.args.get("error")
         if error:
-            return _login_error(
-                request.args.get("error_description", error)
-            )
+            return _login_error(request.args.get("error_description", error))
 
         expected_state = session.pop("_oidc_state", "")
         state = request.args.get("state", "")
         if not expected_state or state != expected_state:
-            return _login_error(
-                "Ungültiger Login-Status. Bitte erneut anmelden."
-            )
+            return _login_error("Ungültiger Login-Status. Bitte erneut anmelden.")
 
         code = request.args.get("code", "")
         verifier = session.pop("_oidc_verifier", "")
@@ -550,9 +536,7 @@ def create_app(
         nonce = session.pop("_oidc_nonce", "")
         next_url = _safe_next(session.pop("_oidc_next", ""))
         if not code or not verifier:
-            return _login_error(
-                "Login-Code fehlt. Bitte erneut anmelden."
-            )
+            return _login_error("Login-Code fehlt. Bitte erneut anmelden.")
 
         try:
             tokens = auth.login.exchange_code(
@@ -613,10 +597,7 @@ def create_app(
             if not target and auth.config.issuer:
                 # Authelia-style portals expose their logout page at /logout
                 # and accept ?rd= to redirect back to the app afterwards.
-                target = (
-                    f"{auth.config.issuer}/logout?rd="
-                    + quote(login_url, safe="")
-                )
+                target = f"{auth.config.issuer}/logout?rd=" + quote(login_url, safe="")
             if target:
                 return redirect(target)
         return redirect(url_for("login"))
@@ -630,9 +611,7 @@ def create_app(
         if polls and ctx.get("choose_poll"):
             try:
                 poll_state = ctx["load_poll_state"](ctx["poll_state_path"])
-                next_poll_index, next_poll = ctx["choose_poll"](
-                    polls, poll_state
-                )
+                next_poll_index, next_poll = ctx["choose_poll"](polls, poll_state)
             except Exception:
                 log.exception("could not determine next poll")
         calendar_config = _calendar_config(ctx)
@@ -648,9 +627,7 @@ def create_app(
             default_group=_default_group(ctx),
             calendar_count=len(calendar_config["calendars"]),
             rule_count=len(calendar_config["rules"]),
-            has_simulated=any(
-                poll.get("simulated") for poll in _load_history(ctx)
-            ),
+            has_simulated=any(poll.get("simulated") for poll in _load_history(ctx)),
         )
 
     @app.post("/simulate")
@@ -689,9 +666,7 @@ def create_app(
                 sender=f"{number}@s.whatsapp.net",
                 sender_alt="",
                 pushname=name,
-                selected_hashes=[
-                    hashlib.sha256(choice.encode("utf-8")).hexdigest()
-                ],
+                selected_hashes=[hashlib.sha256(choice.encode("utf-8")).hexdigest()],
                 timestamp=now,
             )
 
@@ -735,9 +710,7 @@ def create_app(
             row["time"] = _format_timestamp(row["timestamp"])
 
         try:
-            answer_index = (
-                int(answer_value) if answer_value not in (None, "") else None
-            )
+            answer_index = int(answer_value) if answer_value not in (None, "") else None
         except (TypeError, ValueError):
             answer_index = None
         if answer_index is not None and not 0 <= answer_index < len(options):
@@ -753,9 +726,7 @@ def create_app(
             rows = all_rows
         else:
             active_answer = options[answer_index]
-            rows = [
-                row for row in all_rows if active_answer in row["selected"]
-            ]
+            rows = [row for row in all_rows if active_answer in row["selected"]]
 
         return {
             "polls": polls,
@@ -769,18 +740,14 @@ def create_app(
             "option_counts": option_counts,
             "answer_index": answer_index,
             "active_answer": active_answer,
-            "poll_sent": _format_timestamp(poll.get("sent_at"))
-            if poll
-            else "",
+            "poll_sent": _format_timestamp(poll.get("sent_at")) if poll else "",
             "names_export": _names_export(rows),
         }
 
     @app.get("/votes")
     def votes_page() -> str:
         data = _votes_context(request.args.get("i"), request.args.get("a"))
-        return render_template(
-            "votes.html", active="votes", **data
-        )
+        return render_template("votes.html", active="votes", **data)
 
     @app.get("/contacts")
     def contacts_page() -> str:
@@ -793,9 +760,7 @@ def create_app(
         auto_named = 0
         added = 0
         group_error = None
-        directory_loader = ctx.get("group_directory") or ctx.get(
-            "group_contacts"
-        )
+        directory_loader = ctx.get("group_directory") or ctx.get("group_contacts")
         if group and service.connected.is_set() and directory_loader:
             try:
                 raw = directory_loader(group)
@@ -900,9 +865,7 @@ def create_app(
         return Response(
             output,
             mimetype="text/csv; charset=utf-8",
-            headers={
-                "Content-Disposition": "attachment; filename=umfrage.csv"
-            },
+            headers={"Content-Disposition": "attachment; filename=umfrage.csv"},
         )
 
     @app.post("/votes/delete")
@@ -1049,9 +1012,7 @@ def create_app(
                 data, error = scheduler.month_entries(
                     year,
                     month,
-                    os.environ.get(
-                        "CALENDAR_TIMEZONE", "Europe/Berlin"
-                    ),
+                    os.environ.get("CALENDAR_TIMEZONE", "Europe/Berlin"),
                 )
             except Exception as exc:
                 log.exception("calendar view failed")
@@ -1060,19 +1021,17 @@ def create_app(
         events_by_day: dict[str, list[dict[str, Any]]] = {}
         sends_by_day: dict[str, list[dict[str, Any]]] = {}
         for event in data["events"]:
-            events_by_day.setdefault(
-                event["start"].date().isoformat(), []
-            ).append(event)
+            events_by_day.setdefault(event["start"].date().isoformat(), []).append(
+                event
+            )
         for send in data["sends"]:
-            sends_by_day.setdefault(
-                send["send_at"].date().isoformat(), []
-            ).append(send)
+            sends_by_day.setdefault(send["send_at"].date().isoformat(), []).append(send)
 
         today = date.today()
         weeks = []
-        for week in calendar_module.Calendar(
-            firstweekday=0
-        ).monthdatescalendar(year, month):
+        for week in calendar_module.Calendar(firstweekday=0).monthdatescalendar(
+            year, month
+        ):
             days = []
             for day in week:
                 iso = day.isoformat()
@@ -1151,9 +1110,7 @@ def create_app(
             if calendar.get("id") != calendar_id
         ]
         config["rules"] = [
-            rule
-            for rule in config["rules"]
-            if rule.get("calendar_id") != calendar_id
+            rule for rule in config["rules"] if rule.get("calendar_id") != calendar_id
         ]
         if len(config["calendars"]) == before:
             flash("Kalender nicht gefunden.", "error")
@@ -1177,8 +1134,7 @@ def create_app(
         config = _calendar_config(_ctx())
         calendar_id = request.form.get("calendar_id", "")
         if not any(
-            calendar.get("id") == calendar_id
-            for calendar in config["calendars"]
+            calendar.get("id") == calendar_id for calendar in config["calendars"]
         ):
             flash("Bitte einen gültigen Kalender auswählen.", "error")
             return redirect(url_for("calendar_page"))
@@ -1296,9 +1252,7 @@ def start_web(app: Flask, host: str, port: int) -> Any:
     from werkzeug.serving import make_server
 
     server = make_server(host, port, app, threaded=True)
-    thread = threading.Thread(
-        target=server.serve_forever, name="wa-web", daemon=True
-    )
+    thread = threading.Thread(target=server.serve_forever, name="wa-web", daemon=True)
     thread.start()
     server._wa_thread = thread  # type: ignore[attr-defined]
     return server

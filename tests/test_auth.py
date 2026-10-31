@@ -14,9 +14,7 @@ AUDIENCE = "whatsapp-agent"
 
 
 def _key_pair():
-    private_key = rsa.generate_private_key(
-        public_exponent=65537, key_size=2048
-    )
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     public_key = private_key.public_key().public_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
@@ -110,9 +108,7 @@ class AuthGateTests(unittest.TestCase):
             self.gate.check({"Authorization": "Bearer bad"})
 
     def test_disabled_gate_allows_everything(self):
-        config = auth.OIDCConfig(
-            issuer="", audience="", disabled=True
-        )
+        config = auth.OIDCConfig(issuer="", audience="", disabled=True)
         gate = auth.AuthGate(config)
         self.assertEqual(gate.check({}), {})
 
@@ -125,9 +121,7 @@ class PKCETests(unittest.TestCase):
         verifier, challenge = auth.new_pkce_pair()
         self.assertGreaterEqual(len(verifier), 43)
         expected = (
-            base64.urlsafe_b64encode(
-                hashlib.sha256(verifier.encode("ascii")).digest()
-            )
+            base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest())
             .rstrip(b"=")
             .decode("ascii")
         )
@@ -170,9 +164,7 @@ class OIDCLoginTests(unittest.TestCase):
             id_token="id-token",
             post_logout_redirect_uri="https://app.example.com/login",
         )
-        self.assertTrue(
-            url.startswith(ISSUER + "/api/oidc/end-session?")
-        )
+        self.assertTrue(url.startswith(ISSUER + "/api/oidc/end-session?"))
         self.assertIn("id_token_hint=id-token", url)
 
 
