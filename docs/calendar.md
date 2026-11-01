@@ -31,10 +31,12 @@ Calendar configuration lives in `data/calendars.json`; send state (including
 sent-message history) lives in `data/calendar_state.json`.
 
 The dashboard's **Jetzt senden** shows the upcoming planned messages; use
-**←/→** to select one and send it (poll or text) immediately. When it goes to
-the planned group, the occurrence is marked as sent and the rotation advances,
-so the scheduler does not send it again. Sending to a different group leaves
-the schedule untouched.
+**←/→** to select one and send it (poll or text) immediately. **Überspringen**
+marks the selected occurrence as skipped so the scheduler does not send it;
+**Wiederherstellen** puts it back. When a message goes to the planned group,
+the occurrence is marked as sent and the rotation advances, so the scheduler
+does not send it again. Sending to a different group leaves the schedule
+untouched.
 
 ## Local feeds
 

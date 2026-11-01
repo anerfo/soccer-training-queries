@@ -57,7 +57,7 @@
                 {% for send in day.sends %}
                   <button
                     type="button"
-                    class="cal-chip send"
+                    class="cal-chip send{% if send.skipped %} skipped{% endif %}"
                     data-detail="{{ {
                       'Art': 'Geplante Nachricht',
                       'Typ': 'Umfrage' if send.kind == 'poll' else 'Text',
@@ -68,7 +68,7 @@
                       'Gruppe': send.group,
                       'Regel': send.rule_match,
                       'Inhalt': send.content,
-                      'Status': 'gesendet' if send.sent else 'geplant',
+                      'Status': 'übersprungen' if send.skipped else ('gesendet' if send.sent else 'geplant'),
                     } | tojson | forceescape }}"
                   >
                     <span class="chip-time">{{ send.send_at.strftime('%H:%M') }}</span>
@@ -87,6 +87,7 @@
   <div class="legend">
     <span><i class="dot event"></i> Termin</span>
     <span><i class="dot send"></i> Geplante Nachricht</span>
+    <span><i class="dot skipped"></i> Übersprungen</span>
   </div>
 </section>
 

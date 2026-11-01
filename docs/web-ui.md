@@ -10,8 +10,9 @@ The UI has these pages:
   monthly calendar with events and planned/sent messages, a preview of the
   next poll, calendar counts and a "send now" button. **Jetzt senden** shows
   the upcoming planned messages; use **←/→** to select one and send it (the
-  first one matches the card above). Without a planned message it falls back
-  to the next poll from `polls.txt`.
+  first active one matches the card above). **Überspringen** removes a message
+  from the schedule and **Wiederherstellen** brings it back. Without a planned
+  message it falls back to the next poll from `polls.txt`.
 - **Umfragen** — edit `polls.txt` in the browser. The list is validated before
   saving and a preview is shown below the editor.
 - **Ergebnisse** — browse the most recently sent polls, see who accepted and

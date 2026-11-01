@@ -152,6 +152,8 @@ class CalendarScheduler:
             raise CalendarError("calendar occurrence has no key")
         if key in state["sent"]:
             raise CalendarError("message was already sent")
+        if key in state.get("skipped", {}):
+            raise CalendarError("message is skipped; restore it first")
 
         planned_group = str(item.get("group") or rule.get("group", "")).strip()
         target = str(group or planned_group).strip()
@@ -202,6 +204,32 @@ class CalendarScheduler:
             save_calendar_state(self.state_path, state)
         return {**info, "marked": mark_sent}
 
+    def skip_planned(self, item: dict[str, Any]) -> None:
+        """Skip a planned occurrence so the scheduler does not send it."""
+        key = str(item.get("key", ""))
+        if not key:
+            raise CalendarError("calendar occurrence has no key")
+        state = load_calendar_state(self.state_path)
+        if key in state["sent"]:
+            raise CalendarError("message was already sent")
+        send_at = item.get("send_at")
+        state.setdefault("skipped", {})[key] = {
+            "skipped_at": int(datetime.now(UTC).timestamp()),
+            "content": item.get("content", ""),
+            "group": item.get("group", ""),
+            "summary": item.get("summary", ""),
+            "send_at": send_at.isoformat() if send_at else "",
+        }
+        save_calendar_state(self.state_path, state)
+
+    def unskip_planned(self, key: str) -> None:
+        """Restore a previously skipped occurrence."""
+        state = load_calendar_state(self.state_path)
+        skipped = state.get("skipped")
+        if isinstance(skipped, dict) and key in skipped:
+            del skipped[key]
+            save_calendar_state(self.state_path, state)
+
     def _log_calendar_error(self, calendar: dict[str, Any], exc: Exception) -> None:
         url = str(calendar.get("url", ""))
         now_ts = time.monotonic()
@@ -226,6 +254,7 @@ class CalendarScheduler:
         events: list[dict[str, Any]],
         moment: datetime,
         sent: dict[str, Any],
+        skipped: dict[str, Any],
     ) -> list[tuple[dict[str, Any], dict[str, Any], str]]:
         due: list[tuple[dict[str, Any], dict[str, Any], str]] = []
         for rule in calendar_rules:
@@ -243,7 +272,7 @@ class CalendarScheduler:
                 if moment - due_at > timedelta(minutes=GRACE_MINUTES):
                     continue
                 key = _occurrence_key(rule, event)
-                if key in sent:
+                if key in sent or key in skipped:
                     continue
                 due.append((rule, event, key))
         return due
@@ -333,7 +362,13 @@ class CalendarScheduler:
                 continue
             self._error_logged.pop(str(calendar.get("url", "")), None)
 
-            due = self._due_entries(calendar_rules, events, moment, state["sent"])
+            due = self._due_entries(
+                calendar_rules,
+                events,
+                moment,
+                state["sent"],
+                state.get("skipped", {}),
+            )
             if not due:
                 continue
 
@@ -358,6 +393,14 @@ class CalendarScheduler:
             for key, value in state["sent"].items()
             if isinstance(value, (int, float)) and value >= cutoff
         }
+        skipped = state.get("skipped")
+        if isinstance(skipped, dict):
+            state["skipped"] = {
+                key: value
+                for key, value in skipped.items()
+                if isinstance(value.get("skipped_at"), (int, float))
+                and value["skipped_at"] >= cutoff
+            }
         history = state.get("history")
         if isinstance(history, dict):
             state["history"] = {
@@ -422,6 +465,7 @@ class CalendarScheduler:
             "uid": event["uid"],
             "recurrence_id": event["recurrence_id"],
             "sent": False,
+            "skipped": False,
         }
 
     @staticmethod
@@ -445,6 +489,7 @@ class CalendarScheduler:
         rotations: dict[str, Any],
         history: dict[str, Any],
         sent_keys: dict[str, Any],
+        skipped: dict[str, Any],
         moment: datetime,
         sends_out: list[dict[str, Any]],
     ) -> None:
@@ -459,6 +504,11 @@ class CalendarScheduler:
                     item["content"] = stored.get("content", "")
                     item["group"] = stored.get("group", item["group"])
                     item["sent"] = True
+                elif key in skipped:
+                    stored = skipped[key]
+                    item["skipped"] = True
+                    item["content"] = stored.get("content", item["content"])
+                    item["group"] = stored.get("group", item["group"])
                 elif item["send_at"] >= moment and rotation:
                     index = int(rotations.get(rule_id, 0))
                     item["content"] = rotation[index % len(rotation)]
@@ -531,6 +581,7 @@ class CalendarScheduler:
         state = load_calendar_state(self.state_path)
         history = state.get("history", {})
         sent_keys = state.get("sent", {})
+        skipped = state.get("skipped", {})
         rotations = dict(state.get("rotations", {}))
         polls = self._polls()
         by_question = {poll["question"]: poll for poll in polls}
@@ -571,6 +622,7 @@ class CalendarScheduler:
                 rotations,
                 history,
                 sent_keys,
+                skipped,
                 moment,
                 sends_out,
             )
@@ -607,6 +659,7 @@ class CalendarScheduler:
                 "uid": send["uid"],
                 "recurrence_id": send["recurrence_id"],
                 "event_start": send["event_start"],
+                "skipped": send.get("skipped", False),
             }
             for send in sends[:limit]
         ]

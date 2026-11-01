@@ -711,10 +711,14 @@ def create_app(
                 upcoming, _error = scheduler.preview(limit=12)
             except Exception:
                 log.exception("calendar preview failed")
+        default_index = next(
+            (index for index, item in enumerate(upcoming) if not item.get("skipped")),
+            0,
+        )
         try:
-            selected_index = int(request.args.get("msg", "0"))
+            selected_index = int(request.args.get("msg", str(default_index)))
         except ValueError:
-            selected_index = 0
+            selected_index = default_index
         if selected_index < 0:
             selected_index = 0
         if upcoming and selected_index >= len(upcoming):
@@ -722,7 +726,7 @@ def create_app(
         if not upcoming:
             selected_index = 0
         selected_send = upcoming[selected_index] if upcoming else None
-        next_send = upcoming[0] if upcoming else None
+        next_send = next((item for item in upcoming if not item.get("skipped")), None)
         return render_template(
             "index.html",
             active="dashboard",
@@ -1289,7 +1293,10 @@ def create_app(
                     )
                     return redirect(url_for("index"))
             elif items:
-                planned = items[0]
+                planned = next(
+                    (item for item in items if not item.get("skipped")),
+                    None,
+                )
 
         if scheduler is not None and planned is not None:
             group = (
@@ -1332,6 +1339,39 @@ def create_app(
                 f"{result['poll']['question']}",
                 "success",
             )
+        return redirect(url_for("index"))
+
+    @app.post("/skip-now")
+    def skip_now() -> Any:
+        ctx = _ctx()
+        scheduler = ctx.get("calendar_scheduler")
+        key = request.form.get("key", "").strip()
+        action = request.form.get("action", "skip")
+        if scheduler is None or not key:
+            flash("Überspringen ist nicht verfügbar.", "error")
+            return redirect(url_for("index"))
+
+        if action == "restore":
+            try:
+                scheduler.unskip_planned(key)
+            except Exception as exc:
+                log.exception("restore failed")
+                flash(f"Wiederherstellen fehlgeschlagen: {exc}", "error")
+            else:
+                flash("Nachricht wiederhergestellt.", "success")
+            return redirect(url_for("index"))
+
+        try:
+            items, _error = scheduler.preview(limit=12)
+            item = next((item for item in items if item.get("key") == key), None)
+            if item is None:
+                raise LookupError("Nachricht nicht gefunden")
+            scheduler.skip_planned(item)
+        except Exception as exc:
+            log.exception("skip failed")
+            flash(f"Überspringen fehlgeschlagen: {exc}", "error")
+        else:
+            flash("Nachricht übersprungen.", "success")
         return redirect(url_for("index"))
 
     @app.get("/api/status")

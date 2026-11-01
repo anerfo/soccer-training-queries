@@ -86,6 +86,8 @@ def load_calendar_state(path: Path) -> dict[str, Any]:
         data["rotations"] = {}
     if not isinstance(data.get("history"), dict):
         data["history"] = {}
+    if not isinstance(data.get("skipped"), dict):
+        data["skipped"] = {}
     return data
 
 

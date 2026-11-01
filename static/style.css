@@ -534,6 +534,13 @@ textarea.export {
   color: #fde68a;
 }
 .cal-chip.send .chip-kind { color: #fbbf24; }
+.cal-chip.send.skipped {
+  background: #2a1a1a;
+  border-color: #6b2b2b;
+  color: #ffb0b0;
+  text-decoration: line-through;
+}
+.skipped-badge { color: #ffb0b0 !important; }
 
 .chip-time { margin-right: 4px; font-weight: 700; }
 .chip-kind { display: block; color: var(--muted); font-size: .7rem; }
@@ -558,6 +565,7 @@ textarea.export {
 
 .dot.event { background: var(--green-soft); border: 1px solid #2563eb; }
 .dot.send { background: #3a2a0e; border: 1px solid #f59e0b; }
+.dot.skipped { background: #2a1a1a; border: 1px solid #e05252; }
 
 .detail-dialog {
   width: min(560px, calc(100% - 32px));

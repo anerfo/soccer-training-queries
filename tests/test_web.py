@@ -323,6 +323,102 @@ class WebTests(unittest.TestCase):
         self.assertEqual(scheduler.sent[0][0]["key"], "k2")
         self.assertEqual(scheduler.sent[0][1], "Gruppe")
 
+    def test_skip_and_restore_planned_message(self):
+        class Scheduler:
+            def __init__(self):
+                self.skipped = []
+                self.restored = []
+
+            def preview(self, now=None, limit=12):
+                return [
+                    {
+                        "send_at": None,
+                        "start": None,
+                        "summary": "Training",
+                        "kind": "poll",
+                        "content": "Dabei?",
+                        "group": "Gruppe",
+                        "key": "k",
+                        "rule_id": "r",
+                        "uid": "u",
+                        "recurrence_id": "",
+                        "event_start": None,
+                        "skipped": False,
+                    }
+                ], None
+
+            def month_entries(
+                self, year, month, timezone_name="Europe/Berlin", now=None
+            ):
+                return {"events": [], "sends": []}, None
+
+            def skip_planned(self, item):
+                self.skipped.append(item["key"])
+
+            def unskip_planned(self, key):
+                self.restored.append(key)
+
+        scheduler = Scheduler()
+        ctx = dict(self.ctx)
+        ctx["calendar_scheduler"] = scheduler
+        client = create_app(self.service, ctx).test_client()
+
+        response = client.post("/skip-now", data={"key": "k", "action": "skip"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(scheduler.skipped, ["k"])
+
+        response = client.post("/skip-now", data={"key": "k", "action": "restore"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(scheduler.restored, ["k"])
+
+    def test_index_default_selection_skips_skipped_messages(self):
+        from datetime import UTC, datetime
+
+        class Scheduler:
+            def preview(self, now=None, limit=12):
+                return [
+                    {
+                        "send_at": datetime(2026, 11, 3, 23, tzinfo=UTC),
+                        "start": datetime(2026, 11, 4, 19, tzinfo=UTC),
+                        "summary": "Skip",
+                        "kind": "poll",
+                        "content": "Alt",
+                        "group": "Gruppe",
+                        "key": "k1",
+                        "rule_id": "r",
+                        "uid": "u1",
+                        "recurrence_id": "",
+                        "event_start": datetime(2026, 11, 4, 19, tzinfo=UTC),
+                        "skipped": True,
+                    },
+                    {
+                        "send_at": datetime(2026, 11, 3, 23, tzinfo=UTC),
+                        "start": datetime(2026, 11, 4, 19, tzinfo=UTC),
+                        "summary": "Active",
+                        "kind": "poll",
+                        "content": "Neu",
+                        "group": "Gruppe",
+                        "key": "k2",
+                        "rule_id": "r",
+                        "uid": "u2",
+                        "recurrence_id": "",
+                        "event_start": datetime(2026, 11, 11, 19, tzinfo=UTC),
+                        "skipped": False,
+                    },
+                ], None
+
+            def month_entries(
+                self, year, month, timezone_name="Europe/Berlin", now=None
+            ):
+                return {"events": [], "sends": []}, None
+
+        ctx = dict(self.ctx)
+        ctx["calendar_scheduler"] = Scheduler()
+        client = create_app(self.service, ctx).test_client()
+        html = client.get("/").get_data(as_text=True)
+        self.assertIn("Ausgewählte Nachricht 2 von 2", html)
+        self.assertIn("Neu", html)
+
     def test_security_headers(self):
         response = self.client.get("/health")
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")

@@ -118,9 +118,9 @@
     <h2>Jetzt senden</h2>
   </div>
   <p class="muted">
-    Wähle mit ←/→ eine der nächsten geplanten Nachrichten und sende sie sofort.
-    Gibt es keine geplante Nachricht, wird die nächste Umfrage aus
-    <code>polls.txt</code> gesendet.
+    Wähle mit ←/→ eine der nächsten geplanten Nachrichten, überspringe sie oder
+    sende sie sofort. Gibt es keine geplante Nachricht, wird die nächste
+    Umfrage aus <code>polls.txt</code> gesendet.
   </p>
 
   {% if selected_send %}
@@ -142,12 +142,20 @@
       <span class="label">Ausgewählte geplante Nachricht</span>
       <p class="poll-question">{{ selected_send.content }}</p>
       <div>
-        <span class="option">{% if selected_send.kind == 'poll' %}Umfrage{% else %}Text{% endif %}</span>
+        {% if selected_send.skipped %}
+          <span class="option skipped-badge">übersprungen</span>
+        {% else %}
+          <span class="option">{% if selected_send.kind == 'poll' %}Umfrage{% else %}Text{% endif %}</span>
+        {% endif %}
         <span class="option">{{ selected_send.send_at.strftime('%d.%m.%Y %H:%M') }}</span>
         <span class="option">{{ selected_send.group }}</span>
       </div>
       <p class="muted small">{{ selected_send.summary }}</p>
-      <p class="muted small">Bei unveränderter Gruppe wird der Termin als erledigt markiert.</p>
+      {% if selected_send.skipped %}
+        <p class="muted small">Diese Nachricht wird nicht gesendet. Mit „Wiederherstellen" kommt sie zurück.</p>
+      {% else %}
+        <p class="muted small">Bei unveränderter Gruppe wird der Termin als erledigt markiert.</p>
+      {% endif %}
     </div>
   {% elif next_poll %}
     <div class="poll-preview">
@@ -166,16 +174,41 @@
     <p class="muted">Keine geplante Nachricht und keine gültige Umfrage in <code>polls.txt</code> gefunden.</p>
   {% endif %}
 
-  <form method="post" action="{{ url_for('send_now') }}"
-        onsubmit="return confirm('Jetzt die ausgewählte Nachricht senden?');"
-        class="form-grid">
-    {% if selected_send %}<input type="hidden" name="key" value="{{ selected_send.key }}">{% endif %}
-    <label class="wide">Gruppe (Name oder JID)
-      <input type="text" name="group" value="{{ selected_send.group if selected_send else default_group }}" placeholder="z. B. AH Training" required>
-    </label>
-    <div class="form-actions wide">
-      <button type="submit">{% if selected_send %}Ausgewählte Nachricht senden{% else %}Nächste Umfrage senden{% endif %}</button>
-    </div>
-  </form>
+  {% if selected_send and selected_send.skipped %}
+    <form method="post" action="{{ url_for('skip_now') }}" class="form-actions">
+      <input type="hidden" name="key" value="{{ selected_send.key }}">
+      <input type="hidden" name="action" value="restore">
+      <button type="submit" class="secondary">Wiederherstellen</button>
+    </form>
+  {% elif selected_send %}
+    <form method="post" action="{{ url_for('send_now') }}"
+          onsubmit="return confirm('Jetzt die ausgewählte Nachricht senden?');"
+          class="form-grid">
+      <input type="hidden" name="key" value="{{ selected_send.key }}">
+      <label class="wide">Gruppe (Name oder JID)
+        <input type="text" name="group" value="{{ selected_send.group }}" placeholder="z. B. AH Training" required>
+      </label>
+      <div class="form-actions wide">
+        <button type="submit">Ausgewählte Nachricht senden</button>
+      </div>
+    </form>
+    <form method="post" action="{{ url_for('skip_now') }}" class="form-actions"
+          onsubmit="return confirm('Diese geplante Nachricht überspringen?');">
+      <input type="hidden" name="key" value="{{ selected_send.key }}">
+      <input type="hidden" name="action" value="skip">
+      <button type="submit" class="secondary">Überspringen</button>
+    </form>
+  {% elif next_poll %}
+    <form method="post" action="{{ url_for('send_now') }}"
+          onsubmit="return confirm('Jetzt die nächste Umfrage senden?');"
+          class="form-grid">
+      <label class="wide">Gruppe (Name oder JID)
+        <input type="text" name="group" value="{{ default_group }}" placeholder="z. B. AH Training" required>
+      </label>
+      <div class="form-actions wide">
+        <button type="submit">Nächste Umfrage senden</button>
+      </div>
+    </form>
+  {% endif %}
 </section>
 {% endblock %}

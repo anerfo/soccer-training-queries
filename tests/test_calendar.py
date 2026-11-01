@@ -312,6 +312,30 @@ class SchedulerTests(unittest.TestCase):
         next_items, _error = self.scheduler.preview(now=utc(2026, 10, 6, 12, 5))
         self.assertEqual(next_items[0]["content"], "Erste?")
 
+    def test_skip_prevents_send_and_can_restore(self):
+        items, _error = self.scheduler.preview(now=utc(2026, 10, 6, 12))
+        item = items[0]
+        self.scheduler.skip_planned(item)
+
+        items2, _error = self.scheduler.preview(now=utc(2026, 10, 6, 12, 5))
+        self.assertTrue(items2[0]["skipped"])
+
+        self.scheduler.tick(now=utc(2026, 10, 6, 23))
+        self.assertEqual(self.service.polls, [])
+
+        self.scheduler.unskip_planned(item["key"])
+        items3, _error = self.scheduler.preview(now=utc(2026, 10, 6, 12, 10))
+        self.assertFalse(items3[0]["skipped"])
+        self.scheduler.tick(now=utc(2026, 10, 6, 23))
+        self.assertEqual([p[1] for p in self.service.polls], ["Erste?"])
+
+    def test_send_planned_rejects_skipped_message(self):
+        items, _error = self.scheduler.preview(now=utc(2026, 10, 6, 12))
+        item = items[0]
+        self.scheduler.skip_planned(item)
+        with self.assertRaises(calendar_sync.CalendarError):
+            self.scheduler.send_planned(item, group="Gruppe")
+
     def test_preview_shows_upcoming_sends(self):
         items, error = self.scheduler.preview(now=utc(2026, 10, 6, 12))
         self.assertIsNone(error)
