@@ -704,14 +704,25 @@ def create_app(
         calendar_config = _calendar_config(ctx)
         year, month, _month_value = _month_param(request.args.get("month"))
         calendar_view = _calendar_month_context(ctx, year, month)
-        next_send = None
+        upcoming: list[dict[str, Any]] = []
         scheduler = ctx.get("calendar_scheduler")
         if scheduler is not None:
             try:
-                items, _error = scheduler.preview(limit=1)
-                next_send = items[0] if items else None
+                upcoming, _error = scheduler.preview(limit=12)
             except Exception:
                 log.exception("calendar preview failed")
+        try:
+            selected_index = int(request.args.get("msg", "0"))
+        except ValueError:
+            selected_index = 0
+        if selected_index < 0:
+            selected_index = 0
+        if upcoming and selected_index >= len(upcoming):
+            selected_index = len(upcoming) - 1
+        if not upcoming:
+            selected_index = 0
+        selected_send = upcoming[selected_index] if upcoming else None
+        next_send = upcoming[0] if upcoming else None
         return render_template(
             "index.html",
             active="dashboard",
@@ -725,6 +736,9 @@ def create_app(
             calendar_count=len(calendar_config["calendars"]),
             rule_count=len(calendar_config["rules"]),
             next_send=next_send,
+            selected_send=selected_send,
+            selected_index=selected_index,
+            upcoming_count=len(upcoming),
             has_simulated=any(poll.get("simulated") for poll in _load_history(ctx)),
             **calendar_view,
         )
@@ -1256,12 +1270,26 @@ def create_app(
 
         scheduler = ctx.get("calendar_scheduler")
         planned = None
+        selected_key = request.form.get("key", "").strip()
         if scheduler is not None:
             try:
-                items, _error = scheduler.preview(limit=1)
-                planned = items[0] if items else None
+                items, _error = scheduler.preview(limit=12)
             except Exception:
                 log.exception("calendar next-message lookup failed")
+                items = []
+            if selected_key:
+                planned = next(
+                    (item for item in items if item.get("key") == selected_key),
+                    None,
+                )
+                if planned is None:
+                    flash(
+                        "Die ausgewählte Nachricht ist nicht mehr verfügbar.",
+                        "error",
+                    )
+                    return redirect(url_for("index"))
+            elif items:
+                planned = items[0]
 
         if scheduler is not None and planned is not None:
             group = (

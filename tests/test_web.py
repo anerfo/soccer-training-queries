@@ -256,6 +256,73 @@ class WebTests(unittest.TestCase):
         self.assertEqual(scheduler.sent[0][1], "Gruppe")
         self.assertEqual(self.service.sent, [])
 
+    def test_index_message_selector_and_selected_send(self):
+        from datetime import UTC, datetime
+
+        class Scheduler:
+            def __init__(self):
+                self.sent = []
+
+            def preview(self, now=None, limit=12):
+                return [
+                    {
+                        "send_at": datetime(2026, 11, 3, 23, tzinfo=UTC),
+                        "start": datetime(2026, 11, 4, 19, tzinfo=UTC),
+                        "summary": "Training A",
+                        "kind": "poll",
+                        "content": "Frage A",
+                        "group": "Gruppe",
+                        "key": "k1",
+                        "rule_id": "r",
+                        "uid": "u1",
+                        "recurrence_id": "",
+                        "event_start": datetime(2026, 11, 4, 19, tzinfo=UTC),
+                    },
+                    {
+                        "send_at": datetime(2026, 11, 10, 23, tzinfo=UTC),
+                        "start": datetime(2026, 11, 11, 19, tzinfo=UTC),
+                        "summary": "Training B",
+                        "kind": "poll",
+                        "content": "Frage B",
+                        "group": "Gruppe",
+                        "key": "k2",
+                        "rule_id": "r",
+                        "uid": "u2",
+                        "recurrence_id": "",
+                        "event_start": datetime(2026, 11, 11, 19, tzinfo=UTC),
+                    },
+                ], None
+
+            def month_entries(
+                self, year, month, timezone_name="Europe/Berlin", now=None
+            ):
+                return {"events": [], "sends": []}, None
+
+            def send_planned(self, item, group=None):
+                self.sent.append((item, group))
+                return {
+                    "kind": "poll",
+                    "content": item["content"],
+                    "group": group,
+                    "marked": True,
+                }
+
+        scheduler = Scheduler()
+        ctx = dict(self.ctx)
+        ctx["calendar_scheduler"] = scheduler
+        client = create_app(self.service, ctx).test_client()
+
+        html = client.get("/?msg=1").get_data(as_text=True)
+        self.assertIn("Ausgewählte Nachricht 2 von 2", html)
+        self.assertIn("Frage B", html)
+        self.assertIn("msg=0", html)
+
+        response = client.post("/send-now", data={"group": "Gruppe", "key": "k2"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(scheduler.sent), 1)
+        self.assertEqual(scheduler.sent[0][0]["key"], "k2")
+        self.assertEqual(scheduler.sent[0][1], "Gruppe")
+
     def test_security_headers(self):
         response = self.client.get("/health")
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")

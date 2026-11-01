@@ -273,6 +273,14 @@ table { width: 100%; border-collapse: collapse; }
 
 .preview th { color: var(--muted); font-size: .8rem; text-transform: uppercase; }
 
+.message-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
 .poll-preview {
   background: #0b0f15;
   border: 1px solid var(--line);

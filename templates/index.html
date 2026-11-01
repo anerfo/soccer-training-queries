@@ -113,25 +113,40 @@
 
 {% include "_calendar_view.html" %}
 
-<section class="panel">
+<section class="panel" id="send">
   <div class="panel-head">
     <h2>Jetzt senden</h2>
   </div>
   <p class="muted">
-    Sendet die nächste geplante Kalender-Nachricht. Gibt es keine, wird die
-    nächste Umfrage aus <code>polls.txt</code> gesendet.
+    Wähle mit ←/→ eine der nächsten geplanten Nachrichten und sende sie sofort.
+    Gibt es keine geplante Nachricht, wird die nächste Umfrage aus
+    <code>polls.txt</code> gesendet.
   </p>
 
-  {% if next_send %}
+  {% if selected_send %}
+    <div class="message-nav">
+      {% if selected_index > 0 %}
+        <a class="button secondary small-button" href="{{ url_for('index', month=month_param, msg=selected_index - 1) }}#send" title="Vorherige geplante Nachricht">←</a>
+      {% else %}
+        <span class="button secondary small-button disabled">←</span>
+      {% endif %}
+      <span class="muted small">Ausgewählte Nachricht {{ selected_index + 1 }} von {{ upcoming_count }}</span>
+      {% if selected_index + 1 < upcoming_count %}
+        <a class="button secondary small-button" href="{{ url_for('index', month=month_param, msg=selected_index + 1) }}#send" title="Nächste geplante Nachricht">→</a>
+      {% else %}
+        <span class="button secondary small-button disabled">→</span>
+      {% endif %}
+    </div>
+
     <div class="poll-preview">
-      <span class="label">Nächste geplante Nachricht</span>
-      <p class="poll-question">{{ next_send.content }}</p>
+      <span class="label">Ausgewählte geplante Nachricht</span>
+      <p class="poll-question">{{ selected_send.content }}</p>
       <div>
-        <span class="option">{% if next_send.kind == 'poll' %}Umfrage{% else %}Text{% endif %}</span>
-        <span class="option">{{ next_send.send_at.strftime('%d.%m.%Y %H:%M') }}</span>
-        <span class="option">{{ next_send.group }}</span>
+        <span class="option">{% if selected_send.kind == 'poll' %}Umfrage{% else %}Text{% endif %}</span>
+        <span class="option">{{ selected_send.send_at.strftime('%d.%m.%Y %H:%M') }}</span>
+        <span class="option">{{ selected_send.group }}</span>
       </div>
-      <p class="muted small">{{ next_send.summary }}</p>
+      <p class="muted small">{{ selected_send.summary }}</p>
       <p class="muted small">Bei unveränderter Gruppe wird der Termin als erledigt markiert.</p>
     </div>
   {% elif next_poll %}
@@ -152,13 +167,14 @@
   {% endif %}
 
   <form method="post" action="{{ url_for('send_now') }}"
-        onsubmit="return confirm('Jetzt die nächste Nachricht senden?');"
+        onsubmit="return confirm('Jetzt die ausgewählte Nachricht senden?');"
         class="form-grid">
+    {% if selected_send %}<input type="hidden" name="key" value="{{ selected_send.key }}">{% endif %}
     <label class="wide">Gruppe (Name oder JID)
-      <input type="text" name="group" value="{{ next_send.group if next_send else default_group }}" placeholder="z. B. AH Training" required>
+      <input type="text" name="group" value="{{ selected_send.group if selected_send else default_group }}" placeholder="z. B. AH Training" required>
     </label>
     <div class="form-actions wide">
-      <button type="submit">{% if next_send %}Nächste Nachricht senden{% else %}Nächste Umfrage senden{% endif %}</button>
+      <button type="submit">{% if selected_send %}Ausgewählte Nachricht senden{% else %}Nächste Umfrage senden{% endif %}</button>
     </div>
   </form>
 </section>
