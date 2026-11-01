@@ -8,7 +8,9 @@ The UI has these pages:
 
 - **Übersicht** — connection status and time of the next planned message, a
   monthly calendar with events and planned/sent messages, a preview of the
-  next poll, calendar counts and a "send now" button.
+  next poll, calendar counts and a "send now" button. **Jetzt senden** sends
+  the next planned calendar message (the same poll as the card above); without
+  a planned message it falls back to the next poll from `polls.txt`.
 - **Umfragen** — edit `polls.txt` in the browser. The list is validated before
   saving and a preview is shown below the editor.
 - **Ergebnisse** — browse the most recently sent polls, see who accepted and

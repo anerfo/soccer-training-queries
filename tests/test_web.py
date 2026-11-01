@@ -207,6 +207,55 @@ class WebTests(unittest.TestCase):
         self.assertIn("Dabei?", html)
         self.assertIn("Gruppe", html)
 
+    def test_send_now_uses_planned_message(self):
+        from datetime import UTC, datetime
+
+        class Scheduler:
+            def __init__(self):
+                self.sent = []
+
+            def preview(self, now=None, limit=12):
+                return [
+                    {
+                        "send_at": datetime(2026, 11, 3, 23, tzinfo=UTC),
+                        "start": datetime(2026, 11, 4, 19, tzinfo=UTC),
+                        "summary": "Training",
+                        "kind": "poll",
+                        "content": "Dabei?",
+                        "group": "Gruppe",
+                        "key": "k",
+                        "rule_id": "r",
+                        "uid": "u",
+                        "recurrence_id": "",
+                        "event_start": datetime(2026, 11, 4, 19, tzinfo=UTC),
+                    }
+                ], None
+
+            def month_entries(
+                self, year, month, timezone_name="Europe/Berlin", now=None
+            ):
+                return {"events": [], "sends": []}, None
+
+            def send_planned(self, item, group=None):
+                self.sent.append((item, group))
+                return {
+                    "kind": "poll",
+                    "content": item["content"],
+                    "group": group,
+                    "marked": True,
+                }
+
+        scheduler = Scheduler()
+        ctx = dict(self.ctx)
+        ctx["calendar_scheduler"] = scheduler
+        client = create_app(self.service, ctx).test_client()
+        response = client.post("/send-now", data={"group": "Gruppe"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(scheduler.sent), 1)
+        self.assertEqual(scheduler.sent[0][0]["content"], "Dabei?")
+        self.assertEqual(scheduler.sent[0][1], "Gruppe")
+        self.assertEqual(self.service.sent, [])
+
     def test_security_headers(self):
         response = self.client.get("/health")
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")

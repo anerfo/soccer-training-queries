@@ -128,6 +128,80 @@ class CalendarScheduler:
             "question": question,
         }
 
+    def send_planned(
+        self, item: dict[str, Any], group: str | None = None
+    ) -> dict[str, Any]:
+        """Send a previewed calendar message now.
+
+        The occurrence is marked as sent (and the rotation advanced) when the
+        message goes to the planned group, so the scheduler does not send it
+        again later. Sending to another group leaves the schedule untouched.
+        """
+        rule_id = str(item.get("rule_id", ""))
+        config = load_calendar_config(self.config_path)
+        rule = next(
+            (rule for rule in config["rules"] if rule.get("id") == rule_id),
+            None,
+        )
+        if rule is None:
+            raise CalendarError("calendar rule not found")
+
+        state = load_calendar_state(self.state_path)
+        key = str(item.get("key", ""))
+        if not key:
+            raise CalendarError("calendar occurrence has no key")
+        if key in state["sent"]:
+            raise CalendarError("message was already sent")
+
+        planned_group = str(item.get("group") or rule.get("group", "")).strip()
+        target = str(group or planned_group).strip()
+        if not target:
+            raise CalendarError("rule has no group")
+        mark_sent = target == planned_group
+
+        kind = str(item.get("kind") or rule.get("kind", "poll"))
+        content = str(item.get("content", "")).strip()
+        if kind == "text":
+            if not content:
+                raise CalendarError("text message is empty")
+            self.service.send(target, content)
+            info: dict[str, Any] = {
+                "kind": "text",
+                "content": content,
+                "group": target,
+            }
+        else:
+            polls = self._polls()
+            by_question = {poll["question"]: poll for poll in polls}
+            poll = by_question.get(content)
+            if poll is None:
+                raise CalendarError("poll is no longer in polls.txt")
+            self.service.poll(target, poll["question"], poll["options"])
+            info = {
+                "kind": "poll",
+                "content": content,
+                "group": target,
+                "question": content,
+            }
+            if mark_sent:
+                rotation = self._rotation_candidates(rule, by_question, polls)
+                if rotation:
+                    try:
+                        index = rotation.index(content)
+                    except ValueError:
+                        index = -1
+                    state["rotations"][rule_id] = (index + 1) % len(rotation)
+
+        if mark_sent:
+            timestamp = int(datetime.now(UTC).timestamp())
+            state["sent"][key] = timestamp
+            state.setdefault("history", {})[key] = {
+                "sent_at": timestamp,
+                **info,
+            }
+            save_calendar_state(self.state_path, state)
+        return {**info, "marked": mark_sent}
+
     def _log_calendar_error(self, calendar: dict[str, Any], exc: Exception) -> None:
         url = str(calendar.get("url", ""))
         now_ts = time.monotonic()
@@ -343,6 +417,7 @@ class CalendarScheduler:
             "kind": kind,
             "content": str(rule.get("text", "")) if kind == "text" else "",
             "rule_match": rule.get("match", ""),
+            "rule_id": rule.get("id", ""),
             "key": key,
             "uid": event["uid"],
             "recurrence_id": event["recurrence_id"],
@@ -443,6 +518,7 @@ class CalendarScheduler:
         moment: datetime,
         timezone_name: str,
         include_events: bool,
+        exclude_sent: bool = False,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
         tz = ZoneInfo(timezone_name)
         config = load_calendar_config(self.config_path)
@@ -499,6 +575,8 @@ class CalendarScheduler:
                 sends_out,
             )
 
+        if exclude_sent:
+            sends_out = [send for send in sends_out if send["key"] not in sent_keys]
         events_out.sort(key=lambda item: item["start"])
         sends_out.sort(key=lambda item: item["send_at"])
         return events_out, sends_out, errors
@@ -514,6 +592,7 @@ class CalendarScheduler:
             moment=moment,
             timezone_name=DEFAULT_CALENDAR_TIMEZONE,
             include_events=False,
+            exclude_sent=True,
         )
         items = [
             {
@@ -523,6 +602,11 @@ class CalendarScheduler:
                 "kind": send["kind"],
                 "content": send["content"],
                 "group": send["group"],
+                "key": send["key"],
+                "rule_id": send["rule_id"],
+                "uid": send["uid"],
+                "recurrence_id": send["recurrence_id"],
+                "event_start": send["event_start"],
             }
             for send in sends[:limit]
         ]

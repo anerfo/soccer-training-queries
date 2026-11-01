@@ -31,7 +31,9 @@ The rotation is stored in `data/polls_state.json`. Delete that file to start
 again from the first line. Add `--random` to `poll-next` to pick a random poll
 that is never the same as the previous one.
 
-One-off polls are also possible:
+The dashboard's **Jetzt senden** first uses the next planned calendar
+message. If no calendar message is planned, it falls back to the next poll
+from `polls.txt` (manual rotation). One-off polls are also possible:
 
 ```bash
 .venv/bin/python wa.py poll --group "Soccer Mates" \

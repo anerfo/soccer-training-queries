@@ -292,6 +292,26 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(items, [])
         self.assertIn("offset", error)
 
+    def test_send_planned_sends_previewed_message(self):
+        items, error = self.scheduler.preview(now=utc(2026, 10, 6, 12))
+        self.assertIsNone(error)
+        item = items[0]
+        info = self.scheduler.send_planned(item, group="Gruppe")
+        self.assertTrue(info["marked"])
+        self.assertEqual([poll[1] for poll in self.service.polls], ["Erste?"])
+
+        next_items, _error = self.scheduler.preview(now=utc(2026, 10, 6, 12, 5))
+        self.assertEqual(next_items[0]["content"], "Zweite?")
+        self.assertNotEqual(next_items[0]["key"], item["key"])
+
+    def test_send_planned_to_other_group_keeps_schedule(self):
+        items, _error = self.scheduler.preview(now=utc(2026, 10, 6, 12))
+        item = items[0]
+        info = self.scheduler.send_planned(item, group="Andere")
+        self.assertFalse(info["marked"])
+        next_items, _error = self.scheduler.preview(now=utc(2026, 10, 6, 12, 5))
+        self.assertEqual(next_items[0]["content"], "Erste?")
+
     def test_preview_shows_upcoming_sends(self):
         items, error = self.scheduler.preview(now=utc(2026, 10, 6, 12))
         self.assertIsNone(error)

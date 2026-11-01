@@ -1250,12 +1250,42 @@ def create_app(
     @app.post("/send-now")
     def send_now() -> Any:
         ctx = _ctx()
+        if not service.connected.is_set():
+            flash("Nicht mit WhatsApp verbunden.", "error")
+            return redirect(url_for("index"))
+
+        scheduler = ctx.get("calendar_scheduler")
+        planned = None
+        if scheduler is not None:
+            try:
+                items, _error = scheduler.preview(limit=1)
+                planned = items[0] if items else None
+            except Exception:
+                log.exception("calendar next-message lookup failed")
+
+        if scheduler is not None and planned is not None:
+            group = (
+                request.form.get("group") or planned.get("group") or _default_group(ctx)
+            ).strip()
+            if not group:
+                flash("Keine Gruppe konfiguriert.", "error")
+                return redirect(url_for("index"))
+            try:
+                info = scheduler.send_planned(planned, group=group)
+            except Exception as exc:
+                log.exception("planned send failed")
+                flash(f"Senden fehlgeschlagen: {exc}", "error")
+            else:
+                suffix = " – als erledigt markiert" if info.get("marked") else ""
+                flash(
+                    f"Nachricht gesendet: {info.get('content', '')}{suffix}",
+                    "success",
+                )
+            return redirect(url_for("index"))
+
         group = (request.form.get("group") or _default_group(ctx)).strip()
         if not group:
             flash("Keine Gruppe konfiguriert.", "error")
-            return redirect(url_for("index"))
-        if not service.connected.is_set():
-            flash("Nicht mit WhatsApp verbunden.", "error")
             return redirect(url_for("index"))
 
         try:
