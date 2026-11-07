@@ -215,6 +215,21 @@ class NormalizeTextTests(unittest.TestCase):
 
 
 class PollVoteWorkaroundTests(unittest.TestCase):
+    def test_existing_errcheck_is_kept(self):
+        from neonize import _binder
+
+        class FakeFunc:
+            errcheck = object()
+
+        class FakeGoCode:
+            DecryptPollVote = FakeFunc()
+
+        fake = FakeGoCode()
+        original = fake.DecryptPollVote.errcheck
+        with mock.patch.object(_binder, "gocode", fake):
+            wa._install_poll_vote_workaround()
+        self.assertIs(fake.DecryptPollVote.errcheck, original)
+
     def test_errcheck_converts_bytes_struct_and_frees_it(self):
         import ctypes
 

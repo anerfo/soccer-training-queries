@@ -415,6 +415,9 @@ def _install_poll_vote_workaround() -> None:
     gocode = getattr(_binder, "gocode", None)
     if gocode is None or not hasattr(gocode, "DecryptPollVote"):
         return
+    if getattr(gocode.DecryptPollVote, "errcheck", None) is not None:
+        # neonize >= 0.6 already installs the correct errcheck.
+        return
 
     def _consume(result: Any, _func: Any, _args: Any) -> bytes:
         if not result:
