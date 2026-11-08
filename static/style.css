@@ -15,6 +15,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -428,6 +429,17 @@ textarea.export {
   margin: 2px 4px 2px 0;
   font-size: .82rem;
   white-space: nowrap;
+}
+
+.pair-status {
+  margin: 12px 0 0;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #0a0e16;
+  color: var(--text);
+  white-space: pre-wrap;
+  font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .qr-panel { text-align: center; }

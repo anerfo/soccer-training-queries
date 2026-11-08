@@ -3,6 +3,7 @@ site_description: WhatsApp polling bot for a soccer group
 nav:
   - Overview: index.md
   - Setup: setup.md
+  - Passkey pairing: passkey-pairing.md
   - Web UI: web-ui.md
   - Calendar: calendar.md
   - Polls & Results: polls.md

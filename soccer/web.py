@@ -46,6 +46,7 @@ from .calendar import (
     parse_offset,
     save_calendar_config,
 )
+from .pairing import PairingError
 
 MONTHS_DE = (
     "Januar",
@@ -452,6 +453,7 @@ def create_app(
     )
     app.secret_key = os.environ.get("SESSION_SECRET") or os.urandom(32)
     app.config["CTX"] = ctx
+    app.config["BOOT_ID"] = uuid.uuid4().hex
 
     if auth is _AUTH_UNSET:
         auth = build_auth_from_env()
@@ -544,7 +546,7 @@ def create_app(
 
     @app.get("/health")
     def health() -> dict[str, Any]:
-        return {"ok": True}
+        return {"ok": True, "boot": app.config["BOOT_ID"]}
 
     @app.get("/group-check")
     def group_check() -> Any:
@@ -1377,6 +1379,67 @@ def create_app(
     @app.get("/api/status")
     def api_status() -> dict[str, Any]:
         return {"ok": True, **service.status()}
+
+    def _pairing() -> Any:
+        manager = _ctx().get("pairing")
+        if manager is None:
+            abort(503, "passkey pairing is not configured")
+        return manager
+
+    def _pair_error(exc: Exception) -> Any:
+        log.warning("passkey pairing failed: %s", exc)
+        return jsonify(ok=False, error=str(exc)), 502
+
+    @app.post("/pair/start")
+    def pair_start() -> Any:
+        manager = _pairing()
+        body = request.get_json(silent=True)
+        restart = request.args.get("restart") == "1" or (
+            isinstance(body, dict) and bool(body.get("restart"))
+        )
+        try:
+            return jsonify(manager.start(restart=restart))
+        except PairingError as exc:
+            return _pair_error(exc)
+
+    @app.get("/pair/challenge")
+    def pair_challenge() -> Any:
+        manager = _pairing()
+        try:
+            return jsonify(manager.challenge())
+        except PairingError as exc:
+            return _pair_error(exc)
+
+    @app.post("/pair/response")
+    def pair_response() -> Any:
+        manager = _pairing()
+        assertion = request.get_json(silent=True)
+        if not isinstance(assertion, dict):
+            return jsonify(ok=False, error="invalid assertion"), 400
+        try:
+            return jsonify(manager.respond(assertion))
+        except PairingError as exc:
+            return _pair_error(exc)
+
+    @app.get("/pair/status")
+    def pair_status() -> Any:
+        return jsonify(_pairing().status())
+
+    @app.post("/pair/finish")
+    def pair_finish() -> Any:
+        manager = _pairing()
+        try:
+            result = manager.finish()
+        except PairingError as exc:
+            return _pair_error(exc)
+        result["boot"] = app.config["BOOT_ID"]
+        if result.get("restart"):
+            threading.Timer(1.5, lambda: os._exit(75)).start()
+        return jsonify(result)
+
+    @app.post("/pair/abort")
+    def pair_abort() -> Any:
+        return jsonify(_pairing().abort())
 
     return app
 

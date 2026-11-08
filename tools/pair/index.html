@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhatsApp Passkey-Kopplung</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #0b141a; color: #e9edef; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 1.5rem; margin: 0 0 8px; }
+  p { margin: 8px 0; }
+  .muted { color: #8696a0; }
+  .ok { color: #25d366; } .bad { color: #f15c6d; }
+  button { margin: 20px 0 12px; padding: 12px 20px; font-weight: 600; border: 0; border-radius: 8px; background: #00a884; color: #fff; cursor: pointer; }
+  button:disabled { background: #2a3942; color: #8696a0; cursor: not-allowed; }
+  pre { min-height: 96px; margin: 12px 0; padding: 12px; border-radius: 8px; background: #111b21; border: 1px solid #2a3942; white-space: pre-wrap; font: 13px/1.6 ui-monospace, monospace; }
+  ol { padding-left: 20px; } li { margin: 6px 0; }
+  code { background: #111b21; padding: 1px 5px; border-radius: 4px; }
+  .small { font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>WhatsApp Passkey-Kopplung</h1>
+  <p class="muted">Dieses Werkzeug koppelt dein WhatsApp-Konto einmalig über einen Passkey. Es läuft lokal bzw. im Heimnetz – der Passkey verlässt dein Gerät nicht.</p>
+
+  <ol class="small">
+    <li>Chrome mit der geladenen <code>wa-passkey-connector</code>-Erweiterung öffnen (siehe Anleitung).</li>
+    <li>Diese Seite im selben Browser öffnen.</li>
+    <li>„Passkey-Kopplung starten“ drücken und den Passkey (Windows Hello, Touch ID, Sicherheitsschlüssel …) bestätigen.</li>
+    <li>Falls WhatsApp es verlangt: den angezeigten Code am Handy bestätigen.</li>
+  </ol>
+
+  <div id="detect" class="muted">Erweiterung wird gesucht …</div>
+  <button id="pair" disabled>Passkey-Kopplung starten</button>
+  <pre id="status">Status wird geladen …</pre>
+  <p class="small muted">Nach erfolgreicher Kopplung den Worker mit <code>Ctrl+C</code> beenden und die neue Session-DB an den Daemon übergeben.</p>
+</main>
+<script>
+(function () {
+  "use strict";
+  var token = new URLSearchParams(location.search).get("token") || "";
+  var statusEl = document.getElementById("status");
+  var detectEl = document.getElementById("detect");
+  var pairBtn = document.getElementById("pair");
+  var connectorReady = false;
+
+  function api(path, opts) {
+    var sep = path.indexOf("?") >= 0 ? "&" : "?";
+    return fetch(path + sep + "token=" + encodeURIComponent(token), opts);
+  }
+
+  function detectConnector(timeoutMs) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function onMsg(e) {
+        if (e.source === window && e.data && e.data.source === "wa-passkey-connector" &&
+            e.data.type === "CONNECTOR_READY") {
+          done = true;
+          window.removeEventListener("message", onMsg);
+          clearInterval(iv);
+          clearTimeout(to);
+          resolve(true);
+        }
+      }
+      function ping() {
+        window.postMessage({ target: "wa-passkey-connector", type: "PING" }, "*");
+      }
+      window.addEventListener("message", onMsg);
+      var iv = setInterval(ping, 300);
+      var to = setTimeout(function () {
+        if (!done) {
+          window.removeEventListener("message", onMsg);
+          clearInterval(iv);
+          resolve(false);
+        }
+      }, timeoutMs);
+      ping();
+    });
+  }
+
+  function runAssertion(publicKey, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      var requestId = (crypto.randomUUID ? crypto.randomUUID() :
+        String(Date.now()) + "-" + Math.random().toString(16).slice(2));
+      function onMsg(e) {
+        if (e.source !== window || !e.data || e.data.source !== "wa-passkey-connector") return;
+        if (e.data.type !== "PASSKEY_ASSERTION_RESULT" || e.data.requestId !== requestId) return;
+        cleanup();
+        if (e.data.assertion) resolve(e.data.assertion);
+        else reject(new Error(e.data.error || "Passkey-Assertion fehlgeschlagen"));
+      }
+      function cleanup() {
+        window.removeEventListener("message", onMsg);
+        clearTimeout(to);
+      }
+      var to = setTimeout(function () {
+        cleanup();
+        reject(new Error("Timeout: kein Ergebnis von der Erweiterung"));
+      }, timeoutMs);
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        target: "wa-passkey-connector",
+        type: "RUN_PASSKEY_ASSERTION",
+        requestId: requestId,
+        publicKey: publicKey
+      }, "*");
+    });
+  }
+
+  detectConnector(1500).then(function (ok) {
+    connectorReady = ok;
+    detectEl.textContent = ok
+      ? "Erweiterung erkannt. Bereit zur Kopplung."
+      : "Erweiterung nicht gefunden. Bitte die Anleitung befolgen und die Seite neu laden.";
+    detectEl.className = ok ? "ok" : "bad";
+    pairBtn.disabled = !ok;
+  });
+
+  pairBtn.addEventListener("click", async function () {
+    pairBtn.disabled = true;
+    try {
+      statusEl.textContent = "Challenge wird geholt …";
+      var res = await api("/challenge");
+      if (!res.ok) throw new Error(await res.text());
+      var data = await res.json();
+
+      statusEl.textContent = "Bitte jetzt den Passkey auf diesem Gerät bestätigen …";
+      var assertion = await runAssertion(data.publicKey, 120000);
+
+      statusEl.textContent = "Assertion wird an WhatsApp gesendet …";
+      var post = await api("/response", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(assertion)
+      });
+      if (!post.ok) throw new Error(await post.text());
+      statusEl.textContent = "Warte auf Bestätigung durch WhatsApp …";
+    } catch (err) {
+      statusEl.textContent = "Fehler: " + err.message;
+    } finally {
+      pairBtn.disabled = !connectorReady;
+    }
+  });
+
+  async function refresh() {
+    try {
+      var res = await api("/status");
+      if (!res.ok) return;
+      var s = await res.json();
+      var lines = [];
+      lines.push("Verbindung: " + (s.connected ? "verbunden" : "noch nicht verbunden"));
+      if (s.paired) lines.push("Gerät gekoppelt.");
+      if (s.code) lines.push(s.skipHandoff
+        ? "Code (informativ): " + s.code
+        : "Prüfcode am Handy: " + s.code);
+      if (s.skipHandoff) lines.push("(keine Bestätigung am Handy nötig)");
+      if (s.error) lines.push("Fehler: " + s.error);
+      statusEl.textContent = lines.join("\n");
+    } catch (err) {
+      /* transient */
+    }
+  }
+  setInterval(refresh, 1500);
+  refresh();
+})();
+</script>
+</body>
+</html>

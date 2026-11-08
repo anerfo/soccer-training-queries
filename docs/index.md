@@ -31,6 +31,7 @@ WhatsApp account.
 ## Documentation
 
 - [Setup & first run](setup.md)
+- [Passkey pairing](passkey-pairing.md)
 - [Web UI](web-ui.md)
 - [Calendar-driven messages](calendar.md)
 - [Polls, results & contacts](polls.md)

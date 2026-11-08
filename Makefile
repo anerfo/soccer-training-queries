@@ -9,7 +9,7 @@ PIP_AUDIT ?= .venv/bin/pip-audit
 MKDOCS ?= .venv/bin/mkdocs
 SOURCES ?= wa.py soccer
 
-.PHONY: install-dev test lint format format-check typecheck coverage complexity maintainability duplication metrics security docs-serve docs-build quality
+.PHONY: install-dev test lint format format-check typecheck coverage complexity maintainability duplication metrics security docs-serve docs-build pair-build pair quality
 
 install-dev:
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -53,5 +53,11 @@ docs-serve:
 
 docs-build:
 	$(MKDOCS) build --strict
+
+pair-build:
+	docker compose --profile pair build pair
+
+pair:
+	docker compose --profile pair run --rm --service-ports pair
 
 quality: lint format-check typecheck test coverage metrics security

@@ -23,6 +23,7 @@ WA_UID=$(id -u) WA_GID=$(id -g) docker compose up -d --build
 The full documentation lives in [`docs/`](docs/index.md):
 
 - [Setup & first run](docs/setup.md)
+- [Passkey pairing](docs/passkey-pairing.md)
 - [Web UI](docs/web-ui.md)
 - [Calendar-driven messages](docs/calendar.md)
 - [Polls, results & contacts](docs/polls.md)

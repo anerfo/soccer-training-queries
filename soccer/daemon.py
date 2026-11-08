@@ -1017,14 +1017,18 @@ def serve(args: argparse.Namespace) -> int:
     )
     calendar_scheduler.start()
 
+    pairing_manager = None
     web_server = None
     if not args.no_web:
         try:
+            from .pairing import PairingManager
             from .web import create_app, start_web
 
+            pairing_manager = PairingManager(Path(args.db))
             app = create_app(
                 service,
                 {
+                    "pairing": pairing_manager,
                     "polls_path": polls_path,
                     "poll_state_path": poll_state_path,
                     "qr_path": Path(args.qr),
@@ -1059,6 +1063,8 @@ def serve(args: argparse.Namespace) -> int:
         if web_server is not None:
             web_server.shutdown()
             web_server.server_close()
+        if pairing_manager is not None:
+            pairing_manager.stop()
         service.stop()
         return 1
     server.service = service  # type: ignore[attr-defined]
@@ -1082,12 +1088,23 @@ def serve(args: argparse.Namespace) -> int:
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
+    service_ended = False
     while not stop.wait(0.5):
-        if service.stop_requested.is_set():
-            log.warning("Stopping: %s", service.failure or "connection ended")
-            break
+        if service.stop_requested.is_set() and not service_ended:
+            service_ended = True
+            reason = service.failure or "connection ended"
+            if web_server is None:
+                log.warning("Stopping: %s", reason)
+                break
+            log.warning(
+                "WhatsApp connection ended (%s); web UI stays available for "
+                "passkey re-pairing",
+                reason,
+            )
 
     calendar_scheduler.stop()
+    if pairing_manager is not None:
+        pairing_manager.stop()
     if web_server is not None:
         web_server.shutdown()
         web_server.server_close()
@@ -1100,7 +1117,7 @@ def serve(args: argparse.Namespace) -> int:
     except FileNotFoundError:
         pass
     log.info("Stopped")
-    exit_code = 1 if service.failure else 0
+    exit_code = 1 if (service.failure and not stop.is_set()) else 0
 
     # neonize 0.5.x can leave its non-daemon connection worker blocked in the
     # QR-channel loop after a disconnect while unpaired. Everything of ours is

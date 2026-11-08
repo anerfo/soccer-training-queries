@@ -29,7 +29,10 @@ docker compose logs -f wa
 ```
 
 The QR code is written to `data/qr.png` on the host. The web UI is available
-at <http://127.0.0.1:8080>. You can use the same image for CLI commands:
+at <http://127.0.0.1:8080>. The image also contains the passkey pairing worker;
+passkey-locked accounts can use the **“Mit Passkey anmelden”** panel in the web
+UI instead of the QR code (see [Passkey pairing](passkey-pairing.md)). You can
+use the same image for CLI commands:
 
 ```bash
 docker compose exec wa python wa.py groups
@@ -59,6 +62,10 @@ is overwritten as the QR rotates.
 
 Once you see `Connected to WhatsApp`, open `http://127.0.0.1:8080` to manage
 polls, results, names and calendars, and leave the daemon running.
+
+If the account is protected by a passkey, the QR code will not link a new
+device. Open the web UI while the daemon is running and use the **“Mit Passkey
+anmelden”** panel; see [Passkey pairing](passkey-pairing.md).
 
 To run it in the background:
 
@@ -92,3 +99,6 @@ JID instead. `wa.py groups --json` is available for scripts.
 - `data/calendars.json` — calendars and rules
 - `data/calendar_state.json` — sent occurrences and rotation
 - `data/qr.png` — pairing QR code
+- `data/wa_session_new.db` — temporary database of the passkey worker
+- `data/wa_session.db.bak-*` — previous session database after a passkey pairing
+- `data/pair-worker.log` — passkey worker diagnostics (keep private)

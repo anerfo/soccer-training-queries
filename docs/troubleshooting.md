@@ -4,6 +4,10 @@
   refreshed `data/qr.png`.
 - **`session was logged out`** — the phone removed the linked device. Delete
   `data/wa_session.db` and pair again.
+- **QR pairing asks for a passkey / cannot link** — the account is
+  passkey-locked. Follow [Passkey pairing](passkey-pairing.md) instead of
+  scanning a QR code. The web UI stays available after a logout; load the
+  `wa-passkey-connector` extension and use the passkey panel.
 - **`group ... not found`** — run `wa.py groups` and use the exact name or JID.
 - **`cannot reach daemon`** — start `wa.py serve` first; check `data/daemon.log`.
 - **`not connected after 30s`** — check the daemon log and whether the phone

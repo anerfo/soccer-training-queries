@@ -2,6 +2,7 @@
 .gitignore
 .venv
 data
+site
 __pycache__
 *.py[cod]
 tests
@@ -11,6 +12,7 @@ tests
 .ruff_cache
 .pytest_cache
 .mypy_cache
+.coverage
+htmlcov
 docs
 mkdocs.yml
-site

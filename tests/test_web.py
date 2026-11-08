@@ -52,6 +52,31 @@ class FakeService:
         }
 
 
+class FakePairing:
+    def __init__(self):
+        self.calls = []
+
+    def start(self, *, restart=False):
+        self.calls.append(("start", restart))
+        return {"ok": True, "running": True, "started": True}
+
+    def challenge(self):
+        return {"publicKey": {"challenge": "abc"}}
+
+    def respond(self, assertion):
+        self.calls.append(("respond", assertion))
+        return {"ok": True}
+
+    def status(self):
+        return {"running": True, "paired": False, "connected": False, "error": ""}
+
+    def finish(self):
+        return {"ok": True, "restart": False}
+
+    def abort(self):
+        return {"ok": True}
+
+
 class SafeNextTests(unittest.TestCase):
     def test_allows_local_paths(self):
         self.assertEqual(_safe_next("/votes?i=1"), "/votes?i=1")
@@ -82,7 +107,9 @@ class WebTests(unittest.TestCase):
         self.contacts_path = base / "contacts.json"
         self.calendar_config_path = base / "calendars.json"
         self.service = FakeService()
+        self.pairing = FakePairing()
         ctx = {
+            "pairing": self.pairing,
             "polls_path": self.polls_path,
             "poll_state_path": self.poll_state,
             "qr_path": self.qr_path,
@@ -124,6 +151,35 @@ class WebTests(unittest.TestCase):
         ):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, path)
+
+    def test_health_reports_boot_id(self):
+        data = self.client.get("/health").get_json()
+        self.assertTrue(data["boot"])
+
+    def test_passkey_routes_proxy_to_manager(self):
+        self.assertTrue(self.client.get("/pair/status").get_json()["running"])
+        challenge = self.client.get("/pair/challenge").get_json()
+        self.assertEqual(challenge["publicKey"]["challenge"], "abc")
+
+        start = self.client.post("/pair/start", json={"restart": True})
+        self.assertTrue(start.get_json()["ok"])
+        self.assertEqual(self.pairing.calls[-1], ("start", True))
+
+        response = self.client.post("/pair/response", json={"id": "x"})
+        self.assertTrue(response.get_json()["ok"])
+        self.assertEqual(self.pairing.calls[-1], ("respond", {"id": "x"}))
+
+        abort = self.client.post("/pair/abort", json={})
+        self.assertTrue(abort.get_json()["ok"])
+
+    def test_passkey_response_requires_object(self):
+        response = self.client.post("/pair/response", json=["nope"])
+        self.assertEqual(response.status_code, 400)
+
+    def test_passkey_finish_returns_boot(self):
+        data = self.client.post("/pair/finish", json={}).get_json()
+        self.assertTrue(data["ok"])
+        self.assertTrue(data["boot"])
 
     def test_calendar_view_shows_entries(self):
         from datetime import UTC, datetime
@@ -648,6 +704,12 @@ class WebTests(unittest.TestCase):
     def test_unauthenticated_page_redirects_to_login(self):
         client = create_app(self.service, self.ctx, self._gate()).test_client()
         response = client.get("/votes")
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.headers["Location"].startswith("/login"))
+
+    def test_pair_routes_require_login(self):
+        client = create_app(self.service, self.ctx, self._gate()).test_client()
+        response = client.get("/pair/status")
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.headers["Location"].startswith("/login"))
 

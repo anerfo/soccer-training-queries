@@ -43,10 +43,33 @@
 </div>
 
 {% if not status.connected %}
+<section class="panel pair-panel" id="passkey-pair">
+  <h2>Mit Passkey anmelden</h2>
+  <p class="muted">
+    Für Konten mit Passkey-Schutz. Die Erweiterung
+    <code>wa-passkey-connector</code> muss im Browser geladen sein und die
+    Origin dieser Seite in <code>APP_HOSTS</code> eingetragen haben.
+  </p>
+  <p class="muted small">
+    Eintrag ohne Port, zum Beispiel <code>https://soccer.anerfo.org/*</code>.
+    Details stehen in <code>docs/passkey-pairing.md</code>.
+  </p>
+  <div id="pair-detect" class="muted small">Erweiterung wird gesucht …</div>
+  <div class="sim-actions">
+    <button type="button" id="pair-start" disabled>Passkey-Kopplung starten</button>
+    <button type="button" id="pair-abort" class="secondary" hidden>Abbrechen</button>
+  </div>
+  <pre id="pair-status" class="pair-status" hidden></pre>
+</section>
+
 <section class="panel qr-panel">
-  <h2>WhatsApp anmelden</h2>
+  <h2>Oder per QR-Code anmelden</h2>
   <p class="muted">
     Öffne WhatsApp, tippe auf <strong>Verknüpfte Geräte</strong> und scanne den QR-Code.
+  </p>
+  <p class="muted small">
+    Bei passkey-gesperrten Konten funktioniert der QR-Code nicht – nutze dann
+    oben die Passkey-Kopplung.
   </p>
   <div class="qr-wrap">
     <img
@@ -107,6 +130,276 @@
   }
 
   setInterval(refresh, 5000);
+})();
+</script>
+
+<script>
+(function () {
+  "use strict";
+  var detectEl = document.getElementById("pair-detect");
+  var startButton = document.getElementById("pair-start");
+  var abortButton = document.getElementById("pair-abort");
+  var statusEl = document.getElementById("pair-status");
+  if (!detectEl || !startButton || !abortButton || !statusEl) return;
+
+  var connectorReady = false;
+  var flowActive = false;
+  var polling = null;
+  var retry = false;
+
+  function setStatus(text) {
+    statusEl.hidden = false;
+    statusEl.textContent = text;
+  }
+
+  function api(path, options) {
+    return fetch(path, options).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (data) {
+        if (!response.ok) {
+          throw new Error(data.error || ("HTTP " + response.status));
+        }
+        return data;
+      });
+    });
+  }
+
+  function post(path, payload) {
+    return api(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload || {})
+    });
+  }
+
+  function detectConnector(timeoutMs) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function onMsg(event) {
+        if (event.source === window && event.data &&
+            event.data.source === "wa-passkey-connector" &&
+            event.data.type === "CONNECTOR_READY") {
+          done = true;
+          window.removeEventListener("message", onMsg);
+          clearInterval(interval);
+          clearTimeout(timeout);
+          resolve(true);
+        }
+      }
+      function ping() {
+        window.postMessage({ target: "wa-passkey-connector", type: "PING" }, "*");
+      }
+      window.addEventListener("message", onMsg);
+      var interval = setInterval(ping, 300);
+      var timeout = setTimeout(function () {
+        if (!done) {
+          window.removeEventListener("message", onMsg);
+          clearInterval(interval);
+          resolve(false);
+        }
+      }, timeoutMs);
+      ping();
+    });
+  }
+
+  function runAssertion(publicKey, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      var requestId = crypto.randomUUID ? crypto.randomUUID() :
+        String(Date.now()) + "-" + Math.random().toString(16).slice(2);
+      function onMsg(event) {
+        if (event.source !== window || !event.data ||
+            event.data.source !== "wa-passkey-connector") return;
+        if (event.data.type !== "PASSKEY_ASSERTION_RESULT" ||
+            event.data.requestId !== requestId) return;
+        cleanup();
+        if (event.data.assertion) resolve(event.data.assertion);
+        else reject(new Error(event.data.error || "Passkey fehlgeschlagen"));
+      }
+      function cleanup() {
+        window.removeEventListener("message", onMsg);
+        clearTimeout(timeout);
+      }
+      var timeout = setTimeout(function () {
+        cleanup();
+        reject(new Error("Timeout: keine Antwort der Erweiterung"));
+      }, timeoutMs);
+      window.addEventListener("message", onMsg);
+      window.postMessage({
+        target: "wa-passkey-connector",
+        type: "RUN_PASSKEY_ASSERTION",
+        requestId: requestId,
+        publicKey: publicKey
+      }, "*");
+    });
+  }
+
+  function stopPolling() {
+    if (polling !== null) {
+      clearInterval(polling);
+      polling = null;
+    }
+  }
+
+  function fail(message) {
+    stopPolling();
+    flowActive = false;
+    retry = true;
+    startButton.textContent = "Erneut versuchen";
+    startButton.disabled = !connectorReady;
+    abortButton.hidden = false;
+    setStatus("Fehler: " + message);
+  }
+
+  function done() {
+    stopPolling();
+    flowActive = false;
+    abortButton.hidden = true;
+    startButton.disabled = true;
+    startButton.textContent = "Passkey-Kopplung starten";
+  }
+
+  function waitForBoot(boot) {
+    return new Promise(function (resolve) {
+      var started = Date.now();
+      function check() {
+        fetch("/health", { cache: "no-store" })
+          .then(function (response) { return response.json(); })
+          .then(function (data) {
+            if (data.boot && data.boot !== boot) {
+              resolve(true);
+            } else {
+              retryLater();
+            }
+          })
+          .catch(retryLater);
+      }
+      function retryLater() {
+        if (Date.now() - started > 30000) {
+          resolve(false);
+        } else {
+          setTimeout(check, 700);
+        }
+      }
+      setTimeout(check, 1200);
+    });
+  }
+
+  function describeStatus(data) {
+    var lines = [];
+    if (data.connected) {
+      lines.push("WhatsApp: verbunden");
+    } else if (data.paired) {
+      lines.push("Gerät gekoppelt, warte auf Verbindung …");
+    } else {
+      lines.push("Warte auf Bestätigung durch WhatsApp …");
+    }
+    if (data.code) {
+      lines.push(data.skipHandoff
+        ? "Code (informativ): " + data.code
+        : "Prüfcode am Handy: " + data.code);
+    }
+    if (data.skipHandoff) {
+      lines.push("Keine zusätzliche Bestätigung am Handy nötig.");
+    }
+    if (data.error) {
+      lines.push("Hinweis: " + data.error);
+    }
+    return lines.join("\n");
+  }
+
+  async function finishPairing() {
+    setStatus("Gerät gekoppelt. Sitzung wird übernommen …");
+    try {
+      var result = await post("/pair/finish", {});
+      abortButton.hidden = true;
+      if (!result.restart) {
+        done();
+        setStatus("Gerät gekoppelt. Bitte den Dienst neu starten, damit die neue Sitzung geladen wird.");
+        return;
+      }
+      setStatus("Gerät gekoppelt. Dienst startet neu …");
+      var restarted = await waitForBoot(result.boot);
+      if (restarted) {
+        window.location.reload();
+      } else {
+        done();
+        setStatus("Gerät gekoppelt, aber der automatische Neustart hat nicht geklappt. Bitte den Dienst neu starten.");
+      }
+    } catch (err) {
+      fail(err.message);
+    }
+  }
+
+  function pollStatus() {
+    stopPolling();
+    var started = Date.now();
+    polling = setInterval(async function () {
+      try {
+        var data = await api("/pair/status");
+        if (data.paired || data.connected) {
+          stopPolling();
+          await finishPairing();
+          return;
+        }
+        setStatus(describeStatus(data));
+        if (data.error) {
+          fail(data.error);
+          return;
+        }
+        if (Date.now() - started > 180000) {
+          fail("Zeitüberschreitung.");
+        }
+      } catch (err) {
+        /* transient while the worker starts */
+      }
+    }, 1500);
+  }
+
+  async function runFlow() {
+    if (flowActive) return;
+    flowActive = true;
+    startButton.disabled = true;
+    abortButton.hidden = false;
+    setStatus("Pairing-Worker wird gestartet …");
+    try {
+      await post("/pair/start", { restart: retry });
+      retry = false;
+      setStatus("Challenge wird geholt …");
+      var data = await api("/pair/challenge");
+      setStatus("Bitte jetzt den Passkey auf diesem Gerät bestätigen …");
+      var assertion = await runAssertion(data.publicKey, 120000);
+      setStatus("Assertion wird an WhatsApp gesendet …");
+      await post("/pair/response", assertion);
+      setStatus("Warte auf Bestätigung durch WhatsApp …");
+      pollStatus();
+    } catch (err) {
+      fail(err.message);
+    }
+  }
+
+  startButton.addEventListener("click", runFlow);
+
+  abortButton.addEventListener("click", async function () {
+    stopPolling();
+    flowActive = false;
+    try {
+      await post("/pair/abort", {});
+    } catch (err) {
+      /* ignore */
+    }
+    done();
+    retry = false;
+    startButton.disabled = !connectorReady;
+    setStatus("Abgebrochen.");
+  });
+
+  detectConnector(1500).then(function (ok) {
+    connectorReady = ok;
+    detectEl.textContent = ok
+      ? "Erweiterung erkannt. Bereit zur Kopplung."
+      : "Erweiterung nicht gefunden. Bitte die Erweiterung laden und die Seite neu öffnen.";
+    detectEl.className = "small " + (ok ? "ok" : "bad");
+    startButton.disabled = !ok;
+  });
 })();
 </script>
 {% endif %}

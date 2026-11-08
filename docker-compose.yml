@@ -26,6 +26,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-}
       AUTH_DISABLED: ${AUTH_DISABLED:-}
+      WA_AUTO_RESTART: ${WA_AUTO_RESTART:-1}
     ports:
       - "0.0.0.0:8024:8080"
     volumes:
@@ -37,3 +38,17 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  pair:
+    profiles: ["pair"]
+    build:
+      context: ./tools/pair
+    image: whatsapp-pair:latest
+    init: true
+    restart: "no"
+    user: "${WA_UID:-1000}:${WA_GID:-1000}"
+    ports:
+      - "0.0.0.0:8090:8090"
+    volumes:
+      - ./data:/app/data
+    command: ["--db", "/app/data/wa_session_new.db", "--addr", "0.0.0.0:8090"]
